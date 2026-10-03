@@ -150,16 +150,11 @@ export async function addTransmitterGroup(formData: FormData) {
   const supabase = await createClient();
   const sortOrder = await nextSortOrder(supabase, "transmitter_groups", productionId);
 
-  const micIds = text(formData, "micIds")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
   const { error } = await supabase.from("transmitter_groups").insert({
     production_id: productionId,
     sort_order: sortOrder,
     tx_name: required(formData, "txName"),
-    mic_ids: micIds,
+    mic_ids: [],
   });
 
   if (error) throw new Error(error.message);
@@ -342,16 +337,10 @@ export async function updateTransmitterGroup(formData: FormData) {
   const productionId = required(formData, "productionId");
   const id = required(formData, "id");
   const supabase = await createClient();
-  const micIds = text(formData, "micIds")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
   const { error } = await supabase
     .from("transmitter_groups")
     .update({
       tx_name: required(formData, "txName"),
-      mic_ids: micIds,
     })
     .eq("id", id)
     .eq("production_id", productionId);
