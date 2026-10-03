@@ -156,8 +156,10 @@ function parseShow(reader: Reader) {
 
   for (let index = 0; index < pageCount; index += 1) {
     const isInterval = reader.bool();
-    const act = reader.byte();
-    const scene = reader.byte();
+    const rawAct = reader.byte();
+    const rawScene = reader.byte();
+    const act = rawAct & 0x7f;
+    const scene = rawScene & 0x7f;
     const pageLabel = reader.shortString();
 
     // A legacy page flag exists in the binary record but is not surfaced in
@@ -274,7 +276,7 @@ export function parseLegacyMpl(input: ArrayBuffer | Uint8Array): LegacyMplProjec
   const warnings: string[] = [];
   if (versionCode >= 7) {
     warnings.push(
-      "MicPlot 3.0 character/cast compatibility is preliminary until a 3.0 .mpl fixture is validated.",
+      "MicPlot 3.0i core sections validated against multiple production files; deeper movement/group allocation sections are still being mapped.",
     );
   }
 
