@@ -58,6 +58,11 @@ interface ProductionEditorProps {
     page_id: string | null;
     cue: string | null;
   }>;
+  movementCharacters: Array<{
+    movement_id: string;
+    character_id: string;
+    priority_override: string | null;
+  }>;
   groups: Array<{
     id: string;
     tx_name: string;
@@ -96,7 +101,7 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 }
 
 export function ProductionEditor(props: ProductionEditorProps) {
-  const { production, tab, pages, cast, characters, movements, groups } = props;
+  const { production, tab, pages, cast, characters, movements, movementCharacters, groups } = props;
   const castById = new Map(cast.map((member) => [member.id, member.name]));
   const pageById = new Map(
     pages.map((page) => [
@@ -104,6 +109,13 @@ export function ProductionEditor(props: ProductionEditorProps) {
       [page.act, page.scene, page.page_label].filter(Boolean).join(" · "),
     ]),
   );
+  const onStageCountByMovement = new Map<string, number>();
+  for (const row of movementCharacters) {
+    onStageCountByMovement.set(
+      row.movement_id,
+      (onStageCountByMovement.get(row.movement_id) ?? 0) + 1,
+    );
+  }
 
   return (
     <main className="production-editor">
@@ -292,7 +304,7 @@ export function ProductionEditor(props: ProductionEditorProps) {
                   <span className="row-number">{String(index + 1).padStart(2, "0")}</span>
                   <div>
                     <strong>{[movement.cue_id, movement.title].filter(Boolean).join(" · ") || "Untitled movement"}</strong>
-                    <small>{movement.page_id ? pageById.get(movement.page_id) : "No script page"}{movement.cue ? " · " + movement.cue : ""}</small>
+                    <small>{movement.page_id ? pageById.get(movement.page_id) : "No script page"}{movement.cue ? " · " + movement.cue : ""} · {onStageCountByMovement.get(movement.id) ?? 0} on stage</small>
                   </div>
                 </div>
               )) : <EmptyState>Add movements after your script pages are set.</EmptyState>}
