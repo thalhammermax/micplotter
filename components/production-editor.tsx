@@ -58,6 +58,7 @@ interface AllocationPreview {
     vocalRangeMismatches: number;
     beltSizeMismatches: number;
     unmikedNicePages: number;
+    changedAssignments?: number;
   };
   fastSwapProfile: string;
   swaps: Array<{
