@@ -777,3 +777,146 @@ a { color: inherit; text-decoration: none; }
 .modal-footer-spacer {
   flex: 1 1 auto;
 }
+
+.generated-field {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #101419;
+  padding: 10px 11px;
+}
+.generated-field > span {
+  color: #aeb9c3;
+  font-size: 12px;
+  font-weight: 700;
+}
+.generated-field > strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.generated-field > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.micplot-panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.micplot-summary {
+  flex-wrap: wrap;
+}
+.plot-alert {
+  color: #ff8585;
+}
+.plot-warn {
+  color: #ffd166;
+}
+.micplot-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 280px);
+  background: #0d1115;
+}
+.micplot-grid {
+  display: grid;
+  min-width: max-content;
+  align-items: stretch;
+}
+.micplot-corner,
+.micplot-frame-header,
+.micplot-group-header,
+.micplot-cell {
+  border-right: 1px solid #252d35;
+  border-bottom: 1px solid #252d35;
+}
+.micplot-corner {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 66px;
+  padding: 9px 11px;
+  background: #151b20;
+}
+.micplot-corner strong,
+.micplot-corner small,
+.micplot-frame-header strong,
+.micplot-frame-header small,
+.micplot-group-header strong,
+.micplot-group-header small {
+  display: block;
+}
+.micplot-corner small,
+.micplot-frame-header small,
+.micplot-group-header small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.micplot-frame-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  min-height: 66px;
+  padding: 8px;
+  background: #151b20;
+  text-align: center;
+}
+.micplot-frame-header strong {
+  font-size: 11px;
+  line-height: 1.2;
+}
+.micplot-frame-header small {
+  margin-top: 5px;
+}
+.micplot-group-header {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 46px;
+  padding: 8px 10px;
+  background: #11171c;
+}
+.micplot-group-header strong {
+  color: var(--accent-2);
+  font-size: 12px;
+}
+.micplot-group-header small {
+  white-space: normal;
+  line-height: 1.25;
+}
+.micplot-cell {
+  position: relative;
+  min-height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  background: #0f1418;
+}
+.micplot-cell.assigned {
+  background: #1d2a19;
+}
+.micplot-cell.assigned span {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 5px;
+  background: #a8ff60;
+  color: #071006;
+  padding: 6px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+.micplot-cell.swap-start {
+  box-shadow: inset 3px 0 0 #ffd166;
+}
