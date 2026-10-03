@@ -215,14 +215,39 @@ function findMinimumFeasibleCount(
   type: AllocationType,
   currentGroups: AllocationGroup[],
 ) {
-  const minimumFromCurrent =
-    type === "finish" ? currentGroups.length : 0;
-  const start = Math.max(
-    minimumFromCurrent,
+  if (!requirements.length) {
+    return zeroTransmitterCandidate(requirements, timing);
+  }
+
+  const floor = Math.max(
+    type === "finish" ? currentGroups.length : 0,
     hasMustRequirement(requirements) ? 1 : 0,
   );
 
-  for (let count = start; count <= requirements.length; count += 1) {
+  // Always establish a known-good upper bound first. Giving every active actor
+  // their own transmitter is necessarily feasible with respect to sharing and
+  // swap timing, unless Finish has more pre-existing groups than active actors.
+  // This prevents the search budget from being exhausted while proving very
+  // small transmitter counts impossible.
+  const upperBound = Math.max(requirements.length, currentGroups.length, floor);
+  let best = candidateForCount(
+    requirements,
+    timing,
+    upperBound,
+    deadlineMs,
+    type,
+    currentGroups,
+  );
+
+  if (!best) {
+    return null;
+  }
+
+  // Work downward from a valid result. If the effort deadline is reached, keep
+  // the best valid plot found so far rather than reporting a false failure.
+  for (let count = upperBound - 1; count >= floor; count -= 1) {
+    if (Date.now() >= deadlineMs) break;
+
     const candidate = candidateForCount(
       requirements,
       timing,
@@ -231,10 +256,13 @@ function findMinimumFeasibleCount(
       type,
       currentGroups,
     );
-    if (candidate) return candidate;
+
+    if (candidate) {
+      best = candidate;
+    }
   }
 
-  return null;
+  return best;
 }
 
 function compareCandidates(
@@ -320,14 +348,30 @@ export function allocateLikeMicPlot(
     return minimum;
   }
 
-  let best: MicPlotAllocationResult | null = null;
-  const start = Math.max(
+  const floor = Math.max(
     options.type === "finish" ? currentGroups.length : 0,
     hasMustRequirement(active) ? 1 : 0,
   );
+  const upperBound = Math.max(active.length, currentGroups.length, floor);
 
-  for (let count = start; count <= active.length; count += 1) {
-    if (Date.now() > deadlineMs && best) break;
+  // Seed Auto with a valid candidate before spending time comparing lower
+  // transmitter counts. This guarantees Auto can return a usable plot even if
+  // Rough/Normal search time expires during optimization.
+  let best = candidateForCount(
+    active,
+    timing,
+    upperBound,
+    deadlineMs,
+    options.type,
+    currentGroups,
+  );
+
+  if (!best) {
+    throw new Error("MicPlot could not establish a valid baseline allocation.");
+  }
+
+  for (let count = upperBound - 1; count >= floor; count -= 1) {
+    if (Date.now() >= deadlineMs) break;
 
     const candidate = candidateForCount(
       active,
@@ -339,7 +383,7 @@ export function allocateLikeMicPlot(
     );
     if (!candidate) continue;
 
-    if (!best || compareCandidates(candidate, best, rules, options.type) < 0) {
+    if (compareCandidates(candidate, best, rules, options.type) < 0) {
       best = candidate;
     }
   }
