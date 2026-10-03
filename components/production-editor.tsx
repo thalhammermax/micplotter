@@ -143,20 +143,15 @@ function HiddenIds({
 
 function DeleteButton({
   action,
-  productionId,
-  id,
   label,
 }: {
   action: (formData: FormData) => void | Promise<void>;
-  productionId: string;
-  id: string;
   label: string;
 }) {
   return (
-    <form action={action}>
-      <HiddenIds productionId={productionId} id={id} />
-      <button className="danger-button small">{label}</button>
-    </form>
+    <button className="danger-button small" formAction={action}>
+      {label}
+    </button>
   );
 }
 
@@ -292,8 +287,6 @@ export function ProductionEditor(props: ProductionEditorProps) {
                 {selectedPage ? (
                   <DeleteButton
                     action={deleteShowPage}
-                    productionId={production.id}
-                    id={selectedPage.id}
                     label="Delete"
                   />
                 ) : null}
@@ -384,8 +377,6 @@ export function ProductionEditor(props: ProductionEditorProps) {
                 {selectedCast ? (
                   <DeleteButton
                     action={deleteCastMember}
-                    productionId={production.id}
-                    id={selectedCast.id}
                     label="Delete"
                   />
                 ) : null}
@@ -459,8 +450,6 @@ export function ProductionEditor(props: ProductionEditorProps) {
                 {selectedCharacter ? (
                   <DeleteButton
                     action={deleteCharacter}
-                    productionId={production.id}
-                    id={selectedCharacter.id}
                     label="Delete"
                   />
                 ) : null}
@@ -547,8 +536,6 @@ export function ProductionEditor(props: ProductionEditorProps) {
                 {selectedMovement ? (
                   <DeleteButton
                     action={deleteMovement}
-                    productionId={production.id}
-                    id={selectedMovement.id}
                     label="Delete"
                   />
                 ) : null}
@@ -604,8 +591,6 @@ export function ProductionEditor(props: ProductionEditorProps) {
                 {selectedGroup ? (
                   <DeleteButton
                     action={deleteTransmitterGroup}
-                    productionId={production.id}
-                    id={selectedGroup.id}
                     label="Delete"
                   />
                 ) : null}
