@@ -27,6 +27,7 @@ import {
   updateCharacter,
   updateMovement,
   updateShowPage,
+  updateSwapSettings,
   updateTransmitterGroup,
 } from "@/app/app/productions/[productionId]/actions";
 
@@ -127,6 +128,14 @@ interface ProductionEditorProps {
     tx_name: string;
     mic_ids: string[];
   }>;
+  swapSettings: {
+    handheld_swap_pages: number;
+    bodypack_mode: string;
+    bodypack_swap_pages: number;
+    lapel_boom_compatible: boolean;
+    lapel_mic_swap_pages: number;
+    boom_mic_swap_pages: number;
+  };
 }
 
 const tabs: Array<{ key: TabName; label: string }> = [
@@ -208,6 +217,7 @@ export function ProductionEditor(props: ProductionEditorProps) {
     movements,
     movementCharacters,
     groups,
+    swapSettings,
   } = props;
 
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
@@ -216,6 +226,7 @@ export function ProductionEditor(props: ProductionEditorProps) {
   const [selectedMovementId, setSelectedMovementId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [allocationOpen, setAllocationOpen] = useState(false);
+  const [swapTimesOpen, setSwapTimesOpen] = useState(false);
   const [allocationRunning, setAllocationRunning] = useState(false);
   const [allocationError, setAllocationError] = useState<string | null>(null);
   const [allocationResult, setAllocationResult] = useState<AllocationPreview | null>(null);
@@ -684,6 +695,13 @@ export function ProductionEditor(props: ProductionEditorProps) {
                   </button>
                   <button
                     type="button"
+                    className="secondary-button small"
+                    onClick={() => setSwapTimesOpen(true)}
+                  >
+                    Swap Times
+                  </button>
+                  <button
+                    type="button"
                     className="primary-button small"
                     onClick={resetAllocationDialog}
                   >
@@ -752,6 +770,105 @@ export function ProductionEditor(props: ProductionEditorProps) {
           </EmptyState>
         ) : null}
       </section>
+
+      {swapTimesOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="swap-times-modal" role="dialog" aria-modal="true" aria-labelledby="swap-times-title">
+            <header className="modal-header">
+              <div>
+                <div className="eyebrow">Groups</div>
+                <h2 id="swap-times-title">Swap Times</h2>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setSwapTimesOpen(false)}
+                aria-label="Close swap times form"
+              >
+                ×
+              </button>
+            </header>
+
+            <form action={updateSwapSettings} className="swap-times-form">
+              <input type="hidden" name="productionId" value={production.id} />
+
+              <div className="swap-times-section">
+                <h3>Hand-held</h3>
+                <FormField label="Minimum swap time (pages)">
+                  <input
+                    name="handheldSwapPages"
+                    type="number"
+                    min="0"
+                    step="1"
+                    defaultValue={swapSettings.handheld_swap_pages}
+                  />
+                </FormField>
+              </div>
+
+              <div className="swap-times-section">
+                <h3>Bodypack</h3>
+                <FormField label="Mic handling">
+                  <select name="bodypackMode" defaultValue={swapSettings.bodypack_mode}>
+                    <option value="one_mic_per_cast">One mic per cast member</option>
+                    <option value="one_mic_per_pack">One mic per transmitter / pack</option>
+                  </select>
+                </FormField>
+
+                <FormField label="Minimum bodypack swap time (pages)">
+                  <input
+                    name="bodypackSwapPages"
+                    type="number"
+                    min="0"
+                    step="1"
+                    defaultValue={swapSettings.bodypack_swap_pages}
+                  />
+                </FormField>
+
+                <label className="check-label">
+                  <input
+                    name="lapelBoomCompatible"
+                    type="checkbox"
+                    defaultChecked={swapSettings.lapel_boom_compatible}
+                  />
+                  Lapel and boom mics are compatible for sharing
+                </label>
+
+                <div className="form-grid-2">
+                  <FormField label="Lapel mic swap time">
+                    <input
+                      name="lapelMicSwapPages"
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={swapSettings.lapel_mic_swap_pages}
+                    />
+                  </FormField>
+                  <FormField label="Boom mic swap time">
+                    <input
+                      name="boomMicSwapPages"
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={swapSettings.boom_mic_swap_pages}
+                    />
+                  </FormField>
+                </div>
+              </div>
+
+              <footer className="modal-footer">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setSwapTimesOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button className="primary-button">Save</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       {allocationOpen ? (
         <div className="modal-backdrop" role="presentation">
