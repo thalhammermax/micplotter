@@ -275,8 +275,9 @@ export function ProductionEditor(props: ProductionEditorProps) {
   function resetAllocationDialog() {
     setAllocationResult(null);
     setAllocationError(null);
-    setAllocationType(groups.length ? "update" : "new");
-    setTransmitterCountMode("auto");
+    const nextType: AllocationType = groups.length ? "update" : "new";
+    setAllocationType(nextType);
+    setTransmitterCountMode(nextType === "update" ? "manual" : "auto");
     setManualTransmitterCount(Math.max(groups.length, 1));
     setAllocationOpen(true);
   }
@@ -900,6 +901,10 @@ export function ProductionEditor(props: ProductionEditorProps) {
                         className={allocationType === value ? "selected" : ""}
                         onClick={() => {
                           setAllocationType(value);
+                          if (value === "update" && groups.length) {
+                            setTransmitterCountMode("manual");
+                            setManualTransmitterCount(groups.length);
+                          }
                           setAllocationResult(null);
                         }}
                       >
@@ -1039,6 +1044,9 @@ export function ProductionEditor(props: ProductionEditorProps) {
                       <div><span>Non-interval</span><strong>{allocationResult.metrics.nonIntervalSwaps}</strong></div>
                       <div><span>Peak simultaneous</span><strong>{allocationResult.metrics.peakSimultaneousSwaps}</strong></div>
                       <div><span>Refits</span><strong>{allocationResult.metrics.refits}</strong></div>
+                      {allocationType === "update" ? (
+                        <div><span>Actors changed</span><strong>{allocationResult.metrics.changedAssignments ?? 0}</strong></div>
+                      ) : null}
                     </div>
 
                     <div className="allocation-group-preview">
@@ -1061,6 +1069,19 @@ export function ProductionEditor(props: ProductionEditorProps) {
             </div>
 
             <footer className="modal-footer">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setAllocationRules(DEFAULT_ALLOCATION_RULES.map((rule) => ({ ...rule })));
+                  setAllocationResult(null);
+                  setAllocationError(null);
+                }}
+                disabled={allocationRunning}
+              >
+                Default
+              </button>
+              <span className="modal-footer-spacer" />
               <button
                 type="button"
                 className="secondary-button"
