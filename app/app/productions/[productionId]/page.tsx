@@ -36,6 +36,7 @@ export default async function ProductionPage({
     movementsResult,
     movementCharactersResult,
     groupsResult,
+    swapSettingsResult,
   ] = await Promise.all([
     supabase
       .from("productions")
@@ -71,6 +72,11 @@ export default async function ProductionPage({
       .select("id,tx_name,mic_ids")
       .eq("production_id", productionId)
       .order("sort_order"),
+    supabase
+      .from("swap_settings")
+      .select("handheld_swap_pages,bodypack_mode,bodypack_swap_pages,lapel_boom_compatible,lapel_mic_swap_pages,boom_mic_swap_pages")
+      .eq("production_id", productionId)
+      .maybeSingle(),
   ]);
 
   if (productionResult.error || !productionResult.data) notFound();
@@ -85,6 +91,14 @@ export default async function ProductionPage({
       movements={movementsResult.data ?? []}
       movementCharacters={movementCharactersResult.data ?? []}
       groups={groupsResult.data ?? []}
+      swapSettings={swapSettingsResult.data ?? {
+        handheld_swap_pages: 1,
+        bodypack_mode: "one_mic_per_cast",
+        bodypack_swap_pages: 1,
+        lapel_boom_compatible: true,
+        lapel_mic_swap_pages: 1,
+        boom_mic_swap_pages: 1,
+      }}
     />
   );
 }
