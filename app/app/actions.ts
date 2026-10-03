@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { importLegacyMplProject } from "@/lib/legacy/import-project";
 
 function required(formData: FormData, name: string) {
   const value = String(formData.get(name) ?? "").trim();
@@ -77,4 +78,44 @@ export async function signOut() {
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
   redirect("/");
+}
+
+
+export async function importMpl(formData: FormData) {
+  const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
+  if (!userId) redirect("/login");
+
+  const workspaceId = required(formData, "workspaceId");
+  const upload = formData.get("file");
+
+  if (!(upload instanceof File)) {
+    redirect("/app/import?error=file");
+  }
+
+  if (!upload.name.toLowerCase().endsWith(".mpl")) {
+    redirect("/app/import?error=extension");
+  }
+
+  if (upload.size === 0 || upload.size > 10 * 1024 * 1024) {
+    redirect("/app/import?error=size");
+  }
+
+  try {
+    const bytes = new Uint8Array(await upload.arrayBuffer());
+    const result = await importLegacyMplProject({
+      supabase,
+      bytes,
+      userId,
+      workspaceId,
+      fallbackName: upload.name.replace(/\.mpl$/i, ""),
+    });
+
+    revalidatePath("/app");
+    redirect("/app/productions/" + result.production.id + "?tab=show");
+  } catch (error) {
+    console.error("MicPlot import failed", error);
+    redirect("/app/import?error=parse");
+  }
 }
