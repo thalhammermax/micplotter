@@ -110,26 +110,107 @@ export default async function ProductionPage({
       )
     : null;
 
-  const pageLabelById = new Map(
-    (pagesResult.data ?? []).map((page) => [
-      page.id,
-      page.is_interval
-        ? "Interval"
-        : [page.act, page.scene, page.page_label]
-            .filter(Boolean)
-            .join(" · "),
+  const pages = pagesResult.data ?? [];
+  const movements = movementsResult.data ?? [];
+  const characters = charactersResult.data ?? [];
+  const stageStates = movementCharactersResult.data ?? [];
+
+  const pageIndexById = new Map(
+    pages.map((page, index) => [page.id, index]),
+  );
+
+  const characterActorById = new Map(
+    characters.map((character) => [
+      character.id,
+      character.played_by_cast_id,
     ]),
   );
 
-  const micplotFrames = (movementsResult.data ?? []).map((movement, index) => ({
-    movementId: movement.id,
-    movementLabel:
-      [movement.cue_id, movement.title].filter(Boolean).join(" · ") ||
-      "Movement " + String(index + 1),
-    pageLabel: movement.page_id
-      ? pageLabelById.get(movement.page_id) ?? ""
-      : "",
-  }));
+  const onSceneActorsByMovement = new Map<string, Set<string>>();
+  for (const state of stageStates) {
+    const actorId = characterActorById.get(state.character_id);
+    if (!actorId) continue;
+    const set =
+      onSceneActorsByMovement.get(state.movement_id) ?? new Set<string>();
+    set.add(actorId);
+    onSceneActorsByMovement.set(state.movement_id, set);
+  }
+
+  let inheritedPageIndex = 0;
+  const movementPageIndexes = movements.map((movement) => {
+    if (movement.page_id) {
+      const explicit = pageIndexById.get(movement.page_id);
+      if (explicit !== undefined) inheritedPageIndex = explicit;
+    }
+    return inheritedPageIndex;
+  });
+
+  const movementLabel = (movement: (typeof movements)[number], index: number) =>
+    [movement.cue_id, movement.title].filter(Boolean).join(" · ") ||
+    "Movement " + String(index + 1);
+
+  const micplotPages = pages.map((page, pageIndex) => {
+    const frameIndexes = movements
+      .map((_, index) => index)
+      .filter((index) => movementPageIndexes[index] === pageIndex);
+
+    let latestFrame = -1;
+    for (let index = 0; index < movementPageIndexes.length; index += 1) {
+      if (movementPageIndexes[index] <= pageIndex) latestFrame = index;
+      else break;
+    }
+
+    const framesToRender =
+      frameIndexes.length > 0
+        ? frameIndexes
+        : latestFrame >= 0
+          ? [latestFrame]
+          : [];
+
+    const cells: Record<
+      string,
+      Array<{
+        actorId: string | null;
+        onScene: boolean;
+        movementLabel: string;
+        isMovementOnPage: boolean;
+      }>
+    > = {};
+
+    for (const group of currentGroups) {
+      const assignments =
+        currentMicplot?.frameAssignments[group.id] ?? [];
+
+      cells[group.id] = framesToRender.map((frameIndex) => {
+        const actorId = assignments[frameIndex] ?? null;
+        const movement = movements[frameIndex];
+        const onSceneActors = movement
+          ? onSceneActorsByMovement.get(movement.id) ?? new Set<string>()
+          : new Set<string>();
+
+        return {
+          actorId,
+          onScene: actorId ? onSceneActors.has(actorId) : false,
+          movementLabel: movement
+            ? movementLabel(movement, frameIndex)
+            : "",
+          isMovementOnPage: frameIndexes.includes(frameIndex),
+        };
+      });
+    }
+
+    return {
+      pageId: page.id,
+      pageLabel: page.is_interval
+        ? "Interval"
+        : [page.act, page.scene, page.page_label]
+            .filter(Boolean)
+            .join(" · ") || "Page " + String(pageIndex + 1),
+      comment: page.comment,
+      isInterval: page.is_interval,
+      cells,
+    };
+  });
 
   return (
     <ProductionEditor
@@ -151,7 +232,7 @@ export default async function ProductionPage({
                 currentMicplot.metrics.fastSwaps,
               ),
               invalidSwapCount: currentMicplot.invalidSwapCount,
-              frames: micplotFrames,
+              pages: micplotPages,
             }
           : null
       }
