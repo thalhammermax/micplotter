@@ -773,3 +773,7 @@ a { color: inherit; text-decoration: none; }
 .swap-times-section .check-label + .form-grid-2 {
   margin-top: 12px;
 }
+
+.modal-footer-spacer {
+  flex: 1 1 auto;
+}
