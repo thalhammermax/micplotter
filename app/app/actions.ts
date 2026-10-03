@@ -98,7 +98,7 @@ export async function importMpl(formData: FormData) {
     redirect("/app/import?error=extension");
   }
 
-  if (upload.size === 0 || upload.size > 10 * 1024 * 1024) {
+  if (upload.size === 0 || upload.size > 4 * 1024 * 1024) {
     redirect("/app/import?error=size");
   }
 
