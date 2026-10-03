@@ -372,3 +372,31 @@ export async function deleteTransmitterGroup(formData: FormData) {
   if (error) throw new Error(error.message);
   finish(productionId, "groups");
 }
+
+
+export async function updateSwapSettings(formData: FormData) {
+  const productionId = required(formData, "productionId");
+  const supabase = await createClient();
+
+  const nonNegativeInt = (name: string, fallback: number) => {
+    const raw = text(formData, name);
+    if (!raw) return fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
+  };
+
+  const { error } = await supabase
+    .from("swap_settings")
+    .upsert({
+      production_id: productionId,
+      handheld_swap_pages: nonNegativeInt("handheldSwapPages", 1),
+      bodypack_mode: text(formData, "bodypackMode") || "one_mic_per_cast",
+      bodypack_swap_pages: nonNegativeInt("bodypackSwapPages", 1),
+      lapel_boom_compatible: formData.get("lapelBoomCompatible") === "on",
+      lapel_mic_swap_pages: nonNegativeInt("lapelMicSwapPages", 1),
+      boom_mic_swap_pages: nonNegativeInt("boomMicSwapPages", 1),
+    });
+
+  if (error) throw new Error(error.message);
+  finish(productionId, "groups");
+}
