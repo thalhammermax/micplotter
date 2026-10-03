@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import {
+  ALLOCATION_RULE_LABELS,
+  DEFAULT_ALLOCATION_RULES,
+  type AllocationEffort,
+  type AllocationRule,
+  type AllocationType,
+  type OrderedAllocationRule,
+  type TransmitterCountMode,
+} from "@/lib/allocator/types";
 import {
   addCastMember,
   addCharacter,
@@ -29,6 +39,38 @@ type TabName =
   | "groups"
   | "micplot"
   | "compare";
+
+interface AllocationPreview {
+  transmitterCount: number;
+  groups: Array<{ id: string; members: string[] }>;
+  metrics: {
+    transmitters: number;
+    totalSwaps: number;
+    fastSwaps: number[];
+    nonIntervalSwaps: number;
+    peakSimultaneousSwaps: number;
+    refits: number;
+    spareUnavailablePages: number;
+    micColourMismatches: number;
+    micQualityMismatches: number;
+    projectionMismatches: number;
+    vocalRangeMismatches: number;
+    beltSizeMismatches: number;
+    unmikedNicePages: number;
+  };
+  fastSwapProfile: string;
+  swaps: Array<{
+    groupId: string;
+    fromCastMemberId: string;
+    toCastMemberId: string;
+    fromPage: number;
+    toPage: number;
+    availablePages: number;
+    minimumPages: number;
+    isInterval: boolean;
+  }>;
+  committed: boolean;
+}
 
 interface ProductionEditorProps {
   production: {
@@ -156,6 +198,7 @@ function DeleteButton({
 }
 
 export function ProductionEditor(props: ProductionEditorProps) {
+  const router = useRouter();
   const {
     production,
     tab,
@@ -172,6 +215,21 @@ export function ProductionEditor(props: ProductionEditorProps) {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [selectedMovementId, setSelectedMovementId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [allocationOpen, setAllocationOpen] = useState(false);
+  const [allocationRunning, setAllocationRunning] = useState(false);
+  const [allocationError, setAllocationError] = useState<string | null>(null);
+  const [allocationResult, setAllocationResult] = useState<AllocationPreview | null>(null);
+  const [allocationType, setAllocationType] = useState<AllocationType>("new");
+  const [allocationEffort, setAllocationEffort] = useState<AllocationEffort>("normal");
+  const [transmitterCountMode, setTransmitterCountMode] =
+    useState<TransmitterCountMode>("auto");
+  const [manualTransmitterCount, setManualTransmitterCount] = useState(
+    Math.max(groups.length, 1),
+  );
+  const [allocationRules, setAllocationRules] = useState<OrderedAllocationRule[]>(
+    () => DEFAULT_ALLOCATION_RULES.map((rule) => ({ ...rule })),
+  );
+
 
   const selectedPage = pages.find((item) => item.id === selectedPageId) ?? null;
   const selectedCast = cast.find((item) => item.id === selectedCastId) ?? null;
@@ -202,6 +260,77 @@ export function ProductionEditor(props: ProductionEditorProps) {
   const selectedMovementOnStage = selectedMovement
     ? onStageByMovement.get(selectedMovement.id) ?? new Set<string>()
     : new Set<string>();
+
+  function resetAllocationDialog() {
+    setAllocationResult(null);
+    setAllocationError(null);
+    setAllocationType(groups.length ? "update" : "new");
+    setTransmitterCountMode("auto");
+    setManualTransmitterCount(Math.max(groups.length, 1));
+    setAllocationOpen(true);
+  }
+
+  function toggleAllocationRule(rule: AllocationRule) {
+    setAllocationRules((current) =>
+      current.map((item) =>
+        item.rule === rule ? { ...item, enabled: !item.enabled } : item,
+      ),
+    );
+    setAllocationResult(null);
+  }
+
+  function moveAllocationRule(index: number, direction: -1 | 1) {
+    setAllocationRules((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(index, 1);
+      next.splice(nextIndex, 0, item);
+      return next;
+    });
+    setAllocationResult(null);
+  }
+
+  async function runAllocation(commit: boolean) {
+    setAllocationRunning(true);
+    setAllocationError(null);
+
+    try {
+      const response = await fetch("/api/allocate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productionId: production.id,
+          type: allocationType,
+          effort: allocationEffort,
+          transmitterCountMode,
+          manualTransmitterCount:
+            transmitterCountMode === "manual" ? manualTransmitterCount : undefined,
+          rules: allocationRules,
+          commit,
+        }),
+      });
+
+      const data = (await response.json()) as AllocationPreview & { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Allocation failed.");
+      }
+
+      setAllocationResult(data);
+
+      if (commit) {
+        setAllocationOpen(false);
+        setSelectedGroupId(null);
+        router.refresh();
+      }
+    } catch (error) {
+      setAllocationError(
+        error instanceof Error ? error.message : "Allocation failed.",
+      );
+    } finally {
+      setAllocationRunning(false);
+    }
+  }
 
   return (
     <main className="production-editor">
@@ -553,7 +682,13 @@ export function ProductionEditor(props: ProductionEditorProps) {
                   <button className="secondary-button small" onClick={() => setSelectedGroupId(null)}>
                     Add
                   </button>
-                  <button className="primary-button small">Auto Allocate</button>
+                  <button
+                    type="button"
+                    className="primary-button small"
+                    onClick={resetAllocationDialog}
+                  >
+                    Auto Allocate
+                  </button>
                 </div>
               </div>
               {groups.length ? groups.map((group, index) => (
@@ -617,6 +752,226 @@ export function ProductionEditor(props: ProductionEditorProps) {
           </EmptyState>
         ) : null}
       </section>
+
+      {allocationOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="allocation-modal" role="dialog" aria-modal="true" aria-labelledby="allocation-title">
+            <header className="modal-header">
+              <div>
+                <div className="eyebrow">Groups</div>
+                <h2 id="allocation-title">Auto Group Allocation</h2>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setAllocationOpen(false)}
+                aria-label="Close allocation form"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="allocation-layout">
+              <div className="allocation-settings">
+                <div className="allocation-section">
+                  <h3>Allocation type</h3>
+                  <div className="segmented-control">
+                    {(["new", "finish", "update"] as AllocationType[]).map((value) => (
+                      <button
+                        type="button"
+                        key={value}
+                        className={allocationType === value ? "selected" : ""}
+                        onClick={() => {
+                          setAllocationType(value);
+                          setAllocationResult(null);
+                        }}
+                      >
+                        {value[0].toUpperCase() + value.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="allocation-section">
+                  <h3>Number of transmitters</h3>
+                  <div className="mode-row">
+                    <label>
+                      <input
+                        type="radio"
+                        checked={transmitterCountMode === "auto"}
+                        onChange={() => {
+                          setTransmitterCountMode("auto");
+                          setAllocationResult(null);
+                        }}
+                      />
+                      Auto
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={transmitterCountMode === "manual"}
+                        onChange={() => {
+                          setTransmitterCountMode("manual");
+                          setAllocationResult(null);
+                        }}
+                      />
+                      Manual
+                    </label>
+                    <input
+                      className="tx-count-input"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={manualTransmitterCount}
+                      disabled={transmitterCountMode !== "manual"}
+                      onChange={(event) => {
+                        setManualTransmitterCount(Number(event.target.value));
+                        setAllocationResult(null);
+                      }}
+                      aria-label="Manual transmitter count"
+                    />
+                  </div>
+                </div>
+
+                <div className="allocation-section">
+                  <h3>Effort</h3>
+                  <div className="segmented-control">
+                    {(["rough", "normal", "thorough"] as AllocationEffort[]).map((value) => (
+                      <button
+                        type="button"
+                        key={value}
+                        className={allocationEffort === value ? "selected" : ""}
+                        onClick={() => {
+                          setAllocationEffort(value);
+                          setAllocationResult(null);
+                        }}
+                      >
+                        {value[0].toUpperCase() + value.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="allocation-section">
+                  <div className="section-title-row">
+                    <h3>Rules</h3>
+                    <span>Applied top to bottom</span>
+                  </div>
+                  <div className="allocation-rules">
+                    {allocationRules.map((rule, index) => {
+                      const forcedOff =
+                        transmitterCountMode === "manual" &&
+                        rule.rule === "min_transmitters";
+                      return (
+                        <div className="allocation-rule" key={rule.rule}>
+                          <span className="rule-order">{index + 1}</span>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={rule.enabled && !forcedOff}
+                              disabled={forcedOff}
+                              onChange={() => toggleAllocationRule(rule.rule)}
+                            />
+                            <span>{ALLOCATION_RULE_LABELS[rule.rule]}</span>
+                          </label>
+                          <div className="rule-move-buttons">
+                            <button
+                              type="button"
+                              disabled={index === 0}
+                              onClick={() => moveAllocationRule(index, -1)}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              disabled={index === allocationRules.length - 1}
+                              onClick={() => moveAllocationRule(index, 1)}
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="allocation-results">
+                <div className="section-title-row">
+                  <h3>Results</h3>
+                  {allocationResult ? <span>Preview — not yet applied</span> : null}
+                </div>
+
+                {allocationError ? (
+                  <div className="allocation-error">{allocationError}</div>
+                ) : null}
+
+                {!allocationResult && !allocationError ? (
+                  <div className="allocation-placeholder">
+                    Run the allocation to calculate transmitter groups and swap metrics.
+                  </div>
+                ) : null}
+
+                {allocationResult ? (
+                  <>
+                    <div className="allocation-metrics">
+                      <div><span>Transmitters</span><strong>{allocationResult.metrics.transmitters}</strong></div>
+                      <div><span>Total swaps</span><strong>{allocationResult.metrics.totalSwaps}</strong></div>
+                      <div><span>Fast swaps</span><strong>{allocationResult.fastSwapProfile}</strong></div>
+                      <div><span>Non-interval</span><strong>{allocationResult.metrics.nonIntervalSwaps}</strong></div>
+                      <div><span>Peak simultaneous</span><strong>{allocationResult.metrics.peakSimultaneousSwaps}</strong></div>
+                      <div><span>Refits</span><strong>{allocationResult.metrics.refits}</strong></div>
+                    </div>
+
+                    <div className="allocation-group-preview">
+                      {allocationResult.groups.map((group) => (
+                        <div key={group.id} className="allocation-group-row">
+                          <strong>{group.id}</strong>
+                          <span>
+                            {group.members.length
+                              ? group.members
+                                  .map((memberId) => castById.get(memberId) ?? "Unknown actor")
+                                  .join(" → ")
+                              : "Spare / unused"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setAllocationOpen(false)}
+                disabled={allocationRunning}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void runAllocation(false)}
+                disabled={allocationRunning}
+              >
+                {allocationRunning ? "Calculating…" : "Allocate"}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void runAllocation(true)}
+                disabled={allocationRunning || !allocationResult}
+              >
+                Apply
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
