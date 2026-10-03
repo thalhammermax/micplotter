@@ -90,6 +90,15 @@ export function scoreMicplot(
   let unmikedNicePages = 0;
   let invalidSwapCount = 0;
 
+  const groupedActors = new Set(groups.flatMap((group) => group.members));
+  for (const requirement of requirements) {
+    if (groupedActors.has(requirement.castMemberId)) continue;
+    for (const need of requirement.movementNeeds) {
+      if (need === "nice") unmikedNicePages += 1;
+      if (need === "must") invalidSwapCount += 1;
+    }
+  }
+
   const possessionRunsByActor = new Map<string, number>();
   const occupiedPagesByGroup: number[] = [];
 
