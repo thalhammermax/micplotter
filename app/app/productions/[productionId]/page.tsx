@@ -34,6 +34,7 @@ export default async function ProductionPage({
     castResult,
     charactersResult,
     movementsResult,
+    movementCharactersResult,
     groupsResult,
   ] = await Promise.all([
     supabase
@@ -48,12 +49,12 @@ export default async function ProductionPage({
       .order("sort_order"),
     supabase
       .from("cast_members")
-      .select("id,name,abbreviation,ensemble,when_miked,mic_style")
+      .select("id,name,abbreviation,ensemble,ensemble_priority,when_miked,mic_style,mic_colour,belt_size,projection,vocal_range")
       .eq("production_id", productionId)
       .order("sort_order"),
     supabase
       .from("characters")
-      .select("id,name,abbreviation,mic_priority,played_by_cast_id")
+      .select("id,name,abbreviation,mic_priority,mic_quality,played_by_cast_id")
       .eq("production_id", productionId)
       .order("sort_order"),
     supabase
@@ -61,6 +62,10 @@ export default async function ProductionPage({
       .select("id,cue_id,title,page_id,cue")
       .eq("production_id", productionId)
       .order("sort_order"),
+    supabase
+      .from("movement_characters")
+      .select("movement_id,character_id,priority_override")
+      .eq("production_id", productionId),
     supabase
       .from("transmitter_groups")
       .select("id,tx_name,mic_ids")
@@ -78,6 +83,7 @@ export default async function ProductionPage({
       cast={castResult.data ?? []}
       characters={charactersResult.data ?? []}
       movements={movementsResult.data ?? []}
+      movementCharacters={movementCharactersResult.data ?? []}
       groups={groupsResult.data ?? []}
     />
   );
