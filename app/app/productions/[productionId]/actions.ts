@@ -271,6 +271,33 @@ export async function updateMovement(formData: FormData) {
     .eq("production_id", productionId);
 
   if (error) throw new Error(error.message);
+
+  const { error: clearStageError } = await supabase
+    .from("movement_characters")
+    .delete()
+    .eq("production_id", productionId)
+    .eq("movement_id", id);
+  if (clearStageError) throw new Error(clearStageError.message);
+
+  const characterIds = formData
+    .getAll("characterIds")
+    .map((value) => String(value))
+    .filter(Boolean);
+
+  if (characterIds.length) {
+    const { error: stageError } = await supabase
+      .from("movement_characters")
+      .insert(
+        characterIds.map((characterId) => ({
+          production_id: productionId,
+          movement_id: id,
+          character_id: characterId,
+          priority_override: null,
+        })),
+      );
+    if (stageError) throw new Error(stageError.message);
+  }
+
   finish(productionId, "movements");
 }
 
