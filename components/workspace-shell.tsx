@@ -192,16 +192,23 @@ export function WorkspaceShell({
 
         <nav className="production-nav">
           <div className="nav-label">Productions</div>
-          {productions.map((production, index) => (
-            <Link
-              className={index === 0 ? "production-link active" : "production-link"}
-              key={production.id}
-              href={production.id === "demo" || production.id === "template" ? "#" : "/app/productions/" + production.id}
-            >
-              <span className={production.isTemplate ? "production-dot muted" : "production-dot"} />
-              {production.name}
-            </Link>
-          ))}
+          <div className="production-list">
+            {productions.map((production, index) => (
+              <Link
+                className={index === 0 ? "production-link active" : "production-link"}
+                key={production.id}
+                href={production.id === "demo" || production.id === "template" ? "#" : "/app/productions/" + production.id}
+                title={production.name}
+              >
+                <span className={production.isTemplate ? "production-dot muted" : "production-dot"} />
+                <span className="production-link-copy">
+                  <strong>{production.name}</strong>
+                  <small>{production.isTemplate ? "Template" : "Production"}</small>
+                </span>
+                <span className="production-chevron">›</span>
+              </Link>
+            ))}
+          </div>
           <button className="new-production">+ New production</button>
           <Link className="import-mpl-link" href="/app/import">
             <span>↑</span>
