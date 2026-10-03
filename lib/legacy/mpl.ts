@@ -10,6 +10,17 @@ export interface LegacyMplCharacter {
   name: string;
   abbreviation: string;
   playedByIndex: number | null;
+  micPriority: "must" | "nice" | "dont" | "variable_must" | "variable_nice" | "variable_dont";
+  micQuality: number | null;
+}
+
+export interface LegacyMplMovement {
+  cueId: string;
+  title: string;
+  pageIndex: number | null;
+  cue: string;
+  notes: string[];
+  onStageCharacterIndexes: number[];
 }
 
 export interface LegacyMplCastMember {
@@ -27,6 +38,7 @@ export interface LegacyMplProject {
   pages: LegacyMplPage[];
   characters: LegacyMplCharacter[];
   cast: LegacyMplCastMember[];
+  movements: LegacyMplMovement[];
   parserWarnings: string[];
 }
 
@@ -62,6 +74,27 @@ class Reader {
     const slice = this.bytes.slice(this.position, this.position + length);
     this.position += length;
     return new TextDecoder("windows-1252").decode(slice);
+  }
+
+  longString() {
+    if (this.remaining < 4) throw new Error("Unexpected end of MicPlot file.");
+    const view = new DataView(this.bytes.buffer, this.bytes.byteOffset + this.position, 4);
+    const length = view.getInt32(0, true);
+    this.position += 4;
+    if (length < 0 || this.remaining < length) {
+      throw new Error("Invalid MicPlot long string length.");
+    }
+    const slice = this.bytes.slice(this.position, this.position + length);
+    this.position += length;
+    return new TextDecoder("windows-1252").decode(slice);
+  }
+
+  blob() {
+    const length = this.byte();
+    if (this.remaining < length) throw new Error("Invalid MicPlot binary set length.");
+    const value = this.bytes.slice(this.position, this.position + length);
+    this.position += length;
+    return value;
   }
 
   skip(length: number) {
@@ -187,6 +220,15 @@ function parseShow(reader: Reader) {
   };
 }
 
+const LEGACY_MIC_PRIORITIES = [
+  "must",
+  "nice",
+  "dont",
+  "variable_must",
+  "variable_nice",
+  "variable_dont",
+] as const;
+
 function parseCharacters(reader: Reader, versionCode: number) {
   const count = reader.byte();
   const characters: LegacyMplCharacter[] = [];
@@ -194,8 +236,10 @@ function parseCharacters(reader: Reader, versionCode: number) {
   for (let index = 0; index < count; index += 1) {
     const name = reader.shortString();
     const abbreviation = versionCode > 0 ? reader.shortString() : "";
-
     const playedBy = reader.byte();
+
+    let micPriority: LegacyMplCharacter["micPriority"] = "must";
+    let micQuality: number | null = null;
 
     if (versionCode === 0) {
       reader.byte();
@@ -203,9 +247,10 @@ function parseCharacters(reader: Reader, versionCode: number) {
     } else if (versionCode < 7) {
       reader.byte();
     } else {
-      // MicPlot 3.0 adds character mic-priority/quality fields.
-      reader.byte();
-      reader.byte();
+      const priority = reader.byte();
+      const quality = reader.byte();
+      micPriority = LEGACY_MIC_PRIORITIES[priority] ?? "must";
+      micQuality = quality > 0 ? quality : null;
     }
 
     if (versionCode < 4) {
@@ -216,6 +261,8 @@ function parseCharacters(reader: Reader, versionCode: number) {
       name,
       abbreviation,
       playedByIndex: playedBy > 0 ? playedBy - 1 : null,
+      micPriority,
+      micQuality,
     });
   }
 
@@ -258,6 +305,71 @@ function parseCast(reader: Reader, versionCode: number) {
   return cast;
 }
 
+
+function decodeCharacterSet(blob: Uint8Array) {
+  const indexes: number[] = [];
+  for (let byteIndex = 0; byteIndex < blob.length; byteIndex += 1) {
+    const value = blob[byteIndex];
+    for (let bit = 0; bit < 8; bit += 1) {
+      if (value & (1 << bit)) {
+        const legacyIndex = byteIndex * 8 + bit;
+        if (legacyIndex > 0) indexes.push(legacyIndex - 1);
+      }
+    }
+  }
+  return indexes;
+}
+
+function parseMovements(reader: Reader, versionCode: number): LegacyMplMovement[] {
+  if (versionCode < 7 || reader.remaining <= 0) return [];
+
+  const understudyCount = reader.byte();
+  if (understudyCount !== 0) {
+    // Understudy record parsing is separate. Do not guess past a non-empty
+    // section because it would corrupt movement alignment.
+    return [];
+  }
+
+  const noteHeadingCount = reader.byte();
+  for (let index = 0; index < noteHeadingCount; index += 1) {
+    reader.shortString();
+  }
+
+  reader.byte(); // legacy movement-section flag
+  const movementCount = reader.byte();
+  const movements: LegacyMplMovement[] = [];
+  const onStage = new Set<number>();
+
+  for (let index = 0; index < movementCount; index += 1) {
+    const cueId = reader.shortString();
+    const title = reader.shortString();
+    const rawPageIndex = reader.byte();
+    const cue = reader.shortString();
+    const notes = [reader.longString(), reader.longString(), reader.longString()];
+    const stateSets = Array.from({ length: 8 }, () => reader.blob());
+
+    // In 3.0i state set 0 contains entrances and state set 3 contains exits.
+    // Character numbers in these sets are 1-based; bit zero is unused.
+    for (const characterIndex of decodeCharacterSet(stateSets[3])) {
+      onStage.delete(characterIndex);
+    }
+    for (const characterIndex of decodeCharacterSet(stateSets[0])) {
+      onStage.add(characterIndex);
+    }
+
+    movements.push({
+      cueId,
+      title,
+      pageIndex: rawPageIndex > 0 ? rawPageIndex - 1 : null,
+      cue,
+      notes,
+      onStageCharacterIndexes: [...onStage].sort((a, b) => a - b),
+    });
+  }
+
+  return movements;
+}
+
 export function parseLegacyMpl(input: ArrayBuffer | Uint8Array): LegacyMplProject {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const { version, payloadOffset } = parseHeader(bytes);
@@ -272,6 +384,7 @@ export function parseLegacyMpl(input: ArrayBuffer | Uint8Array): LegacyMplProjec
   const show = parseShow(reader);
   const characters = parseCharacters(reader, versionCode);
   const cast = parseCast(reader, versionCode);
+  const movements = parseMovements(reader, versionCode);
 
   const warnings: string[] = [];
   if (versionCode >= 7) {
@@ -280,8 +393,14 @@ export function parseLegacyMpl(input: ArrayBuffer | Uint8Array): LegacyMplProjec
     );
   }
 
+  if (!movements.length && versionCode >= 7) {
+    warnings.push(
+      "Movement import could not be decoded for this file; the production metadata, pages, characters, and cast were still imported.",
+    );
+  }
+
   warnings.push(
-    "Understudies, detailed movement stage states, transmitter groups, and allocation history are not imported in the first compatibility pass yet.",
+    "Understudies and saved transmitter-group/allocation history are not imported yet.",
   );
 
   return {
@@ -289,6 +408,7 @@ export function parseLegacyMpl(input: ArrayBuffer | Uint8Array): LegacyMplProjec
     ...show,
     characters,
     cast,
+    movements,
     parserWarnings: warnings,
   };
 }
