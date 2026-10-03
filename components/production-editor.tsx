@@ -74,6 +74,33 @@ interface AllocationPreview {
   committed: boolean;
 }
 
+interface CurrentMicplot {
+  frameAssignments: Record<string, Array<string | null>>;
+  metrics: {
+    transmitters: number;
+    totalSwaps: number;
+    fastSwaps: number[];
+    nonIntervalSwaps: number;
+    peakSimultaneousSwaps: number;
+    refits: number;
+    spareUnavailablePages: number;
+    micColourMismatches: number;
+    micQualityMismatches: number;
+    projectionMismatches: number;
+    vocalRangeMismatches: number;
+    beltSizeMismatches: number;
+    unmikedNicePages: number;
+    changedAssignments?: number;
+  };
+  fastSwapProfile: string;
+  invalidSwapCount: number;
+  frames: Array<{
+    movementId: string;
+    movementLabel: string;
+    pageLabel: string;
+  }>;
+}
+
 interface ProductionEditorProps {
   production: {
     id: string;
@@ -129,6 +156,12 @@ interface ProductionEditorProps {
     tx_name: string;
     mic_ids: string[];
   }>;
+  groupMembers: Array<{
+    group_id: string;
+    cast_member_id: string;
+    sort_order: number;
+  }>;
+  micplot: CurrentMicplot | null;
   swapSettings: {
     handheld_swap_pages: number;
     bodypack_mode: string;
@@ -218,6 +251,8 @@ export function ProductionEditor(props: ProductionEditorProps) {
     movements,
     movementCharacters,
     groups,
+    groupMembers,
+    micplot,
     swapSettings,
   } = props;
 
@@ -252,6 +287,12 @@ export function ProductionEditor(props: ProductionEditorProps) {
   const selectedGroup = groups.find((item) => item.id === selectedGroupId) ?? null;
 
   const castById = new Map(cast.map((member) => [member.id, member.name]));
+  const membersByGroup = new Map<string, string[]>();
+  for (const member of groupMembers) {
+    const groupList = membersByGroup.get(member.group_id) ?? [];
+    groupList.push(member.cast_member_id);
+    membersByGroup.set(member.group_id, groupList);
+  }
   const pageById = new Map(
     pages.map((page) => [
       page.id,
@@ -721,7 +762,17 @@ export function ProductionEditor(props: ProductionEditorProps) {
                   <span className="row-number">{String(index + 1).padStart(2, "0")}</span>
                   <span>
                     <strong>{group.tx_name}</strong>
-                    <small>{group.mic_ids.length ? "Mic IDs: " + group.mic_ids.join(", ") : "No mic IDs"}</small>
+                    <small>
+                      {[
+                        group.mic_ids.length ? "Mic IDs " + group.mic_ids.join(", ") : null,
+                        (membersByGroup.get(group.id) ?? [])
+                          .map((memberId) => castById.get(memberId))
+                          .filter(Boolean)
+                          .join(" → "),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "No assigned actors"}
+                    </small>
                   </span>
                   <span className="row-edit">Edit</span>
                 </button>
@@ -738,9 +789,15 @@ export function ProductionEditor(props: ProductionEditorProps) {
               <FormField label="TX name">
                 <input name="txName" placeholder="TX_001" defaultValue={selectedGroup?.tx_name ?? ""} required />
               </FormField>
-              <FormField label="Mic IDs">
-                <input name="micIds" placeholder="A, B, C" defaultValue={selectedGroup?.mic_ids.join(", ") ?? ""} />
-              </FormField>
+              <div className="generated-field">
+                <span>Mic IDs</span>
+                <strong>
+                  {selectedGroup?.mic_ids.length
+                    ? selectedGroup.mic_ids.join(", ")
+                    : "Generated automatically from group members"}
+                </strong>
+                <small>MicPlotter assigns A, B, C… automatically.</small>
+              </div>
               <div className="form-actions">
                 <button className="primary-button">{selectedGroup ? "Save changes" : "Add transmitter"}</button>
                 {selectedGroup ? (
@@ -761,9 +818,103 @@ export function ProductionEditor(props: ProductionEditorProps) {
         ) : null}
 
         {tab === "micplot" ? (
-          <EmptyState>
-            The MicPlot timeline will render from the movement states and transmitter groups.
-          </EmptyState>
+          micplot && groups.length ? (
+            <div className="micplot-panel">
+              <div className="plot-summary micplot-summary">
+                <div>
+                  <span>C/F</span>
+                  <strong className={micplot.invalidSwapCount ? "plot-alert" : "good"}>
+                    {micplot.invalidSwapCount ? "Conflict" : "Clear"}
+                  </strong>
+                </div>
+                <div>
+                  <span>U/G</span>
+                  <strong className={micplot.metrics.unmikedNicePages ? "plot-warn" : "good"}>
+                    {micplot.metrics.unmikedNicePages}
+                  </strong>
+                </div>
+                <div><span>Transmitters</span><strong>{micplot.metrics.transmitters}</strong></div>
+                <div><span>Total swaps</span><strong>{micplot.metrics.totalSwaps}</strong></div>
+                <div><span>Fast swaps</span><strong>{micplot.fastSwapProfile}</strong></div>
+                <div><span>Peak swaps</span><strong>{micplot.metrics.peakSimultaneousSwaps}</strong></div>
+              </div>
+
+              <div className="micplot-scroll">
+                <div
+                  className="micplot-grid"
+                  style={{
+                    gridTemplateColumns:
+                      "190px repeat(" + micplot.frames.length + ", minmax(94px, 1fr))",
+                  }}
+                >
+                  <div className="micplot-corner">
+                    <strong>TX / Members</strong>
+                    <small>Movement →</small>
+                  </div>
+
+                  {micplot.frames.map((frame) => (
+                    <div className="micplot-frame-header" key={frame.movementId}>
+                      <strong>{frame.movementLabel}</strong>
+                      <small>{frame.pageLabel || "—"}</small>
+                    </div>
+                  ))}
+
+                  {groups.map((group) => {
+                    const assignments = micplot.frameAssignments[group.tx_name] ?? [];
+                    const members = membersByGroup.get(group.id) ?? [];
+
+                    return [
+                      <div className="micplot-group-header" key={group.id + "-header"}>
+                        <strong>{group.tx_name}</strong>
+                        <small>
+                          {members.length
+                            ? members
+                                .map((memberId, index) => {
+                                  const name = castById.get(memberId) ?? "Unknown";
+                                  const micId = group.mic_ids[index];
+                                  return micId ? name + " (" + micId + ")" : name;
+                                })
+                                .join(" · ")
+                            : "Spare / unused"}
+                        </small>
+                      </div>,
+                      ...micplot.frames.map((frame, frameIndex) => {
+                        const actorId = assignments[frameIndex] ?? null;
+                        const previousActor =
+                          frameIndex > 0 ? assignments[frameIndex - 1] ?? null : null;
+                        const actorName = actorId ? castById.get(actorId) ?? "Unknown" : "";
+
+                        return (
+                          <div
+                            className={
+                              actorId
+                                ? actorId !== previousActor
+                                  ? "micplot-cell assigned swap-start"
+                                  : "micplot-cell assigned"
+                                : "micplot-cell"
+                            }
+                            key={group.id + "-" + frame.movementId}
+                            title={
+                              actorName
+                                ? group.tx_name + " → " + actorName + " · " + frame.movementLabel
+                                : group.tx_name + " unused · " + frame.movementLabel
+                            }
+                          >
+                            {actorName ? <span>{actorName}</span> : null}
+                          </div>
+                        );
+                      }),
+                    ];
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <EmptyState>
+              No current MicPlot exists yet. Use Groups → Auto Allocate, preview the result,
+              then Apply it to create the current micplot.
+            </EmptyState>
+          )
         ) : null}
 
         {tab === "compare" ? (
