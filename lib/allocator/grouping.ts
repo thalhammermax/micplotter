@@ -1,15 +1,53 @@
 import type {
   AllocationGroup,
+  AllocationTimingContext,
   CastRequirement,
   ConflictGraph,
   GroupingResult,
 } from "./model";
+import { freePagesBetween, minimumSwapPages } from "./swaps";
 
 function pairKey(a: string, b: string) {
   return a < b ? a + "|" + b : b + "|" + a;
 }
 
-export function buildConflictGraph(requirements: CastRequirement[]): ConflictGraph {
+function hasTimingConflict(
+  a: CastRequirement,
+  b: CastRequirement,
+  context: AllocationTimingContext,
+) {
+  let previous: { requirement: CastRequirement; frame: number } | null = null;
+  const frames = Math.max(a.movementNeeds.length, b.movementNeeds.length);
+
+  for (let frame = 0; frame < frames; frame += 1) {
+    const aMust = a.movementNeeds[frame] === "must";
+    const bMust = b.movementNeeds[frame] === "must";
+
+    if (aMust && bMust) return true;
+
+    const current = aMust ? a : bMust ? b : null;
+    if (!current) continue;
+
+    if (previous && previous.requirement.castMemberId !== current.castMemberId) {
+      const available = freePagesBetween(previous.frame, frame, context);
+      const minimum = minimumSwapPages(
+        previous.requirement,
+        current,
+        context.swapSettings,
+      );
+      if (available < minimum) return true;
+    }
+
+    previous = { requirement: current, frame };
+  }
+
+  return false;
+}
+
+export function buildConflictGraph(
+  requirements: CastRequirement[],
+  timing?: AllocationTimingContext,
+): ConflictGraph {
   const hard = new Map<string, Set<string>>();
   const soft = new Map<string, Set<string>>();
   const vertices = requirements.map((requirement) => requirement.castMemberId);
@@ -31,7 +69,7 @@ export function buildConflictGraph(requirements: CastRequirement[]): ConflictGra
       const b = byId.get(bId)!;
       const frames = Math.max(a.movementNeeds.length, b.movementNeeds.length);
 
-      let major = false;
+      let major = timing ? hasTimingConflict(a, b, timing) : false;
       let minor = false;
 
       for (let frame = 0; frame < frames; frame += 1) {
@@ -40,7 +78,6 @@ export function buildConflictGraph(requirements: CastRequirement[]): ConflictGra
 
         if (aNeed === "must" && bNeed === "must") {
           major = true;
-          break;
         }
 
         if (
@@ -223,8 +260,9 @@ export function allocateTransmitterGroups(
   requirements: CastRequirement[],
   requestedTransmitterCount?: number,
   deadlineMs = Date.now() + 4_000,
+  timing?: AllocationTimingContext,
 ): GroupingResult {
-  const graph = buildConflictGraph(requirements);
+  const graph = buildConflictGraph(requirements, timing);
   let colors: Map<string, number>;
 
   if (requestedTransmitterCount !== undefined) {
@@ -266,16 +304,16 @@ export function allocateTransmitterGroups(
     groupsByColor.set(color, members);
   }
 
-  const groups = [...groupsByColor.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([color, members]) => ({
-      id: "TX_" + String(color + 1).padStart(3, "0"),
-      members,
-    }));
+  const usedGroupCount = colors.size ? Math.max(...colors.values()) + 1 : 0;
+  const groupCount = requestedTransmitterCount ?? usedGroupCount;
+  const groups: AllocationGroup[] = Array.from({ length: groupCount }, (_, color) => ({
+    id: "TX_" + String(color + 1).padStart(3, "0"),
+    members: groupsByColor.get(color) ?? [],
+  }));
 
   return {
     groups,
-    transmitterCount: groups.length,
+    transmitterCount: groupCount,
     majorConflicts: 0,
     minorConflicts: countSameGroupSoftConflicts(colors, graph),
   };
