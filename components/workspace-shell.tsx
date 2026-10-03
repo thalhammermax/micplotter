@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 const tabs = [
@@ -192,13 +193,14 @@ export function WorkspaceShell({
         <nav className="production-nav">
           <div className="nav-label">Productions</div>
           {productions.map((production, index) => (
-            <button
+            <Link
               className={index === 0 ? "production-link active" : "production-link"}
               key={production.id}
+              href={production.id === "demo" || production.id === "template" ? "#" : "/app/productions/" + production.id}
             >
               <span className={production.isTemplate ? "production-dot muted" : "production-dot"} />
               {production.name}
-            </button>
+            </Link>
           ))}
           <button className="new-production">+ New production</button>
         </nav>
