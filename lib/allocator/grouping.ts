@@ -189,12 +189,30 @@ export function greedyDsatur(graph: ConflictGraph) {
   return colors;
 }
 
+export interface GroupingPreferences {
+  fixedColors?: Map<string, number>;
+  preferredColors?: Map<string, number>;
+}
+
 export function colorWithinLimit(
   graph: ConflictGraph,
   maxColors: number,
   deadlineMs = Date.now() + 2_000,
+  preferences: GroupingPreferences = {},
 ) {
-  const colors = new Map<string, number>();
+  const colors = new Map<string, number>(preferences.fixedColors ?? []);
+
+  for (const [vertex, color] of colors) {
+    if (color < 0 || color >= maxColors || !graph.vertices.includes(vertex)) {
+      return null;
+    }
+  }
+
+  for (const [vertex, color] of colors) {
+    for (const neighbor of graph.hard.get(vertex) ?? []) {
+      if (colors.get(neighbor) === color) return null;
+    }
+  }
 
   function search(): boolean {
     if (Date.now() > deadlineMs) return false;
@@ -203,12 +221,20 @@ export function colorWithinLimit(
     const vertex = chooseNextVertex(colors, graph);
     if (!vertex) return true;
 
+    const preferredColor = preferences.preferredColors?.get(vertex);
     const candidates = Array.from({ length: maxColors }, (_, color) => ({
       color,
+      changePenalty:
+        preferredColor === undefined || preferredColor === color ? 0 : 1,
       penalty: softPenalty(vertex, color, colors, graph),
     })).filter(({ color }) => canUseColor(vertex, color, colors, graph));
 
-    candidates.sort((a, b) => a.penalty - b.penalty || a.color - b.color);
+    candidates.sort(
+      (a, b) =>
+        a.changePenalty - b.changePenalty ||
+        a.penalty - b.penalty ||
+        a.color - b.color,
+    );
 
     for (const candidate of candidates) {
       colors.set(vertex, candidate.color);
@@ -261,6 +287,7 @@ export function allocateTransmitterGroups(
   requestedTransmitterCount?: number,
   deadlineMs = Date.now() + 4_000,
   timing?: AllocationTimingContext,
+  preferences: GroupingPreferences = {},
 ): GroupingResult {
   const graph = buildConflictGraph(requirements, timing);
   let colors: Map<string, number>;
@@ -270,6 +297,7 @@ export function allocateTransmitterGroups(
       graph,
       requestedTransmitterCount,
       deadlineMs,
+      preferences,
     );
 
     if (!result) {
