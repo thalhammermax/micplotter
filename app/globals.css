@@ -451,3 +451,60 @@ a { color: inherit; text-decoration: none; }
   color: var(--muted);
   line-height: 1.4;
 }
+
+.production-nav {
+  display: block;
+  min-width: 0;
+}
+.production-list {
+  display: grid;
+  gap: 6px;
+}
+.production-link {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 10px;
+  border: 1px solid transparent;
+}
+.production-link:hover {
+  background: #171d23;
+  border-color: #27313a;
+}
+.production-link.active {
+  border-color: #2c3a29;
+}
+.production-link .production-dot {
+  margin-right: 0;
+}
+.production-link-copy {
+  min-width: 0;
+}
+.production-link-copy strong,
+.production-link-copy small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.production-link-copy strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+.production-link-copy small {
+  margin-top: 2px;
+  color: #66727f;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.production-chevron {
+  color: #596673;
+  font-size: 17px;
+  line-height: 1;
+}
