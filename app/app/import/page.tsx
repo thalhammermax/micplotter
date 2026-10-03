@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 const errors: Record<string, string> = {
   file: "Choose a MicPlot .mpl file to import.",
   extension: "The selected file must use the .mpl extension.",
-  size: "The selected file is empty or larger than 10 MB.",
+  size: "The selected file is empty or larger than 4 MB.",
   parse:
     "MicPlotter could not decode that .mpl file yet. The original file was not modified.",
 };
