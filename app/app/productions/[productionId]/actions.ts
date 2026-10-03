@@ -108,16 +108,40 @@ export async function addMovement(formData: FormData) {
   const sortOrder = await nextSortOrder(supabase, "movements", productionId);
   const pageId = text(formData, "pageId");
 
-  const { error } = await supabase.from("movements").insert({
-    production_id: productionId,
-    sort_order: sortOrder,
-    cue_id: text(formData, "cueId") || null,
-    title: text(formData, "title") || null,
-    page_id: pageId || null,
-    cue: text(formData, "cue") || null,
-  });
+  const { data: movement, error } = await supabase
+    .from("movements")
+    .insert({
+      production_id: productionId,
+      sort_order: sortOrder,
+      cue_id: text(formData, "cueId") || null,
+      title: text(formData, "title") || null,
+      page_id: pageId || null,
+      cue: text(formData, "cue") || null,
+    })
+    .select("id")
+    .single();
 
-  if (error) throw new Error(error.message);
+  if (error || !movement) throw new Error(error?.message ?? "Unable to add movement.");
+
+  const characterIds = formData
+    .getAll("characterIds")
+    .map((value) => String(value))
+    .filter(Boolean);
+
+  if (characterIds.length) {
+    const { error: stageError } = await supabase
+      .from("movement_characters")
+      .insert(
+        characterIds.map((characterId) => ({
+          production_id: productionId,
+          movement_id: movement.id,
+          character_id: characterId,
+          priority_override: null,
+        })),
+      );
+    if (stageError) throw new Error(stageError.message);
+  }
+
   finish(productionId, "movements");
 }
 
