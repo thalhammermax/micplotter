@@ -19,6 +19,26 @@ export interface CastRequirement extends EquipmentProfile {
   movementNeeds: EffectivePriority[];
 }
 
+export interface AllocationFrame {
+  movementId: string;
+  pageOrdinal: number;
+}
+
+export interface SwapTimingSettings {
+  handheldSwapPages: number;
+  bodypackMode: "one_mic_per_cast" | "one_mic_per_pack";
+  bodypackSwapPages: number;
+  lapelBoomCompatible: boolean;
+  lapelMicSwapPages: number;
+  boomMicSwapPages: number;
+}
+
+export interface AllocationTimingContext {
+  frames: AllocationFrame[];
+  intervalPageOrdinals: number[];
+  swapSettings: SwapTimingSettings;
+}
+
 export interface AllocationGroup {
   id: string;
   members: string[];
