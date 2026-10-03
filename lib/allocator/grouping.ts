@@ -201,10 +201,28 @@ function countSameGroupSoftConflicts(colors: Map<string, number>, graph: Conflic
   return count;
 }
 
+function simultaneousMustLowerBound(requirements: CastRequirement[]) {
+  const frames = requirements.reduce(
+    (max, requirement) => Math.max(max, requirement.movementNeeds.length),
+    0,
+  );
+  let lowerBound = requirements.length ? 1 : 0;
+
+  for (let frame = 0; frame < frames; frame += 1) {
+    let count = 0;
+    for (const requirement of requirements) {
+      if (requirement.movementNeeds[frame] === "must") count += 1;
+    }
+    lowerBound = Math.max(lowerBound, count);
+  }
+
+  return lowerBound;
+}
+
 export function allocateTransmitterGroups(
   requirements: CastRequirement[],
   requestedTransmitterCount?: number,
-  deadlineMs?: number,
+  deadlineMs = Date.now() + 4_000,
 ): GroupingResult {
   const graph = buildConflictGraph(requirements);
   let colors: Map<string, number>;
@@ -213,7 +231,7 @@ export function allocateTransmitterGroups(
     const result = colorWithinLimit(
       graph,
       requestedTransmitterCount,
-      deadlineMs ?? Date.now() + 4_000,
+      deadlineMs,
     );
 
     if (!result) {
@@ -226,7 +244,19 @@ export function allocateTransmitterGroups(
 
     colors = result;
   } else {
-    colors = greedyDsatur(graph);
+    const greedy = greedyDsatur(graph);
+    const greedyCount = greedy.size ? Math.max(...greedy.values()) + 1 : 0;
+    const lowerBound = simultaneousMustLowerBound(requirements);
+    colors = greedy;
+
+    for (let target = lowerBound; target < greedyCount; target += 1) {
+      if (Date.now() > deadlineMs) break;
+      const exact = colorWithinLimit(graph, target, deadlineMs);
+      if (exact) {
+        colors = exact;
+        break;
+      }
+    }
   }
 
   const groupsByColor = new Map<number, string[]>();
