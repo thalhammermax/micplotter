@@ -203,6 +203,10 @@ export function WorkspaceShell({
             </Link>
           ))}
           <button className="new-production">+ New production</button>
+          <Link className="import-mpl-link" href="/app/import">
+            <span>↑</span>
+            Import .mpl file
+          </Link>
         </nav>
 
         <div className="sidebar-footer">
