@@ -920,3 +920,165 @@ a { color: inherit; text-decoration: none; }
 .micplot-cell.swap-start {
   box-shadow: inset 3px 0 0 #ffd166;
 }
+
+.micplot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #11161b;
+  color: var(--muted);
+  font-size: 11px;
+}
+.micplot-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-swatch {
+  width: 18px;
+  height: 11px;
+  border: 1px solid #3a4651;
+  border-radius: 3px;
+  display: inline-block;
+}
+.legend-swatch.possession {
+  background: #30383f;
+}
+.legend-swatch.interval {
+  background: #2a2417;
+}
+.legend-marker {
+  color: var(--accent);
+  font-style: normal;
+  line-height: 1;
+}
+
+.micplot-page-grid {
+  display: grid;
+  min-width: max-content;
+  align-items: stretch;
+}
+.micplot-page-corner,
+.micplot-tx-header,
+.micplot-page-label,
+.micplot-page-cell {
+  border-right: 1px solid #252d35;
+  border-bottom: 1px solid #252d35;
+}
+.micplot-page-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 8;
+  min-height: 72px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #151b20;
+}
+.micplot-page-corner strong,
+.micplot-page-corner small,
+.micplot-tx-header strong,
+.micplot-tx-header small,
+.micplot-page-label strong,
+.micplot-page-label small {
+  display: block;
+}
+.micplot-page-corner small,
+.micplot-tx-header small,
+.micplot-page-label small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+.micplot-tx-header {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  min-height: 72px;
+  padding: 9px 8px;
+  background: #151b20;
+  text-align: center;
+}
+.micplot-tx-header strong {
+  color: var(--accent-2);
+  font-size: 12px;
+}
+.micplot-tx-header small {
+  margin-top: 5px;
+  max-width: 180px;
+  white-space: normal;
+}
+.micplot-page-label {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  min-height: 44px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 10px;
+  background: #11171c;
+}
+.micplot-page-label strong {
+  font-size: 12px;
+}
+.micplot-page-label.interval {
+  background: #2a2417;
+}
+.micplot-page-cell {
+  min-height: 44px;
+  padding: 4px;
+  background: #0e1317;
+}
+.micplot-page-cell.has-possession {
+  background: #2a3137;
+}
+.micplot-page-cell.interval {
+  box-shadow: inset 0 0 0 999px rgba(154, 118, 35, .08);
+}
+.micplot-possession-stack {
+  display: grid;
+  gap: 3px;
+  height: 100%;
+}
+.micplot-holder {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  border: 1px solid #46515a;
+  border-radius: 5px;
+  background: #353d44;
+  color: #aeb8c1;
+  padding: 5px 6px;
+  font-size: 10px;
+}
+.micplot-holder.on-scene {
+  border-color: #668e45;
+  background: #26351f;
+  color: #e5f7d4;
+}
+.holder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 750;
+}
+.movement-markers {
+  display: inline-flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.on-scene-marker {
+  color: var(--accent);
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1;
+}
