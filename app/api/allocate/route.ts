@@ -40,10 +40,29 @@ export async function POST(request: Request) {
   }
 
   try {
-    const input = await loadProductionAllocationInput(
-      supabase,
-      payload.productionId,
-    );
+    const [input, currentGroupResult, currentMemberResult] = await Promise.all([
+      loadProductionAllocationInput(supabase, payload.productionId),
+      supabase
+        .from("transmitter_groups")
+        .select("id,tx_name,mic_ids,sort_order")
+        .eq("production_id", payload.productionId)
+        .order("sort_order"),
+      supabase
+        .from("group_members")
+        .select("group_id,cast_member_id,sort_order")
+        .eq("production_id", payload.productionId)
+        .order("sort_order"),
+    ]);
+
+    if (currentGroupResult.error) throw currentGroupResult.error;
+    if (currentMemberResult.error) throw currentMemberResult.error;
+
+    const currentGroups = (currentGroupResult.data ?? []).map((group) => ({
+      id: group.tx_name,
+      members: (currentMemberResult.data ?? [])
+        .filter((member) => member.group_id === group.id)
+        .map((member) => member.cast_member_id),
+    }));
 
     if (!input.timing.frames.length) {
       return NextResponse.json(
@@ -58,6 +77,7 @@ export async function POST(request: Request) {
       transmitterCountMode: payload.transmitterCountMode,
       manualTransmitterCount: payload.manualTransmitterCount,
       rules: payload.rules,
+      currentGroups,
     });
 
     if (payload.commit) {
@@ -78,12 +98,18 @@ export async function POST(request: Request) {
         const { data, error } = await supabase
           .from("transmitter_groups")
           .insert(
-            result.groups.map((group, index) => ({
-              production_id: payload.productionId,
-              sort_order: (index + 1) * 10,
-              tx_name: group.id,
-              mic_ids: [],
-            })),
+            result.groups.map((group, index) => {
+              const previous = (currentGroupResult.data ?? []).find(
+                (existing) => existing.tx_name === group.id,
+              );
+
+              return {
+                production_id: payload.productionId,
+                sort_order: (index + 1) * 10,
+                tx_name: group.id,
+                mic_ids: previous?.mic_ids ?? [],
+              };
+            }),
           )
           .select("id,tx_name");
 
