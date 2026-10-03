@@ -94,10 +94,20 @@ interface CurrentMicplot {
   };
   fastSwapProfile: string;
   invalidSwapCount: number;
-  frames: Array<{
-    movementId: string;
-    movementLabel: string;
+  pages: Array<{
+    pageId: string;
     pageLabel: string;
+    comment: string | null;
+    isInterval: boolean;
+    cells: Record<
+      string,
+      Array<{
+        actorId: string | null;
+        onScene: boolean;
+        movementLabel: string;
+        isMovementOnPage: boolean;
+      }>
+    >;
   }>;
 }
 
@@ -839,32 +849,29 @@ export function ProductionEditor(props: ProductionEditorProps) {
                 <div><span>Peak swaps</span><strong>{micplot.metrics.peakSimultaneousSwaps}</strong></div>
               </div>
 
+              <div className="micplot-legend">
+                <span><i className="legend-swatch possession" /> Mic on actor</span>
+                <span><i className="legend-marker">●</i> Actor on scene at movement</span>
+                <span><i className="legend-swatch interval" /> Interval</span>
+              </div>
+
               <div className="micplot-scroll">
                 <div
-                  className="micplot-grid"
+                  className="micplot-page-grid"
                   style={{
                     gridTemplateColumns:
-                      "190px repeat(" + micplot.frames.length + ", minmax(94px, 1fr))",
+                      "180px repeat(" + groups.length + ", minmax(122px, 1fr))",
                   }}
                 >
-                  <div className="micplot-corner">
-                    <strong>TX / Members</strong>
-                    <small>Movement →</small>
+                  <div className="micplot-page-corner">
+                    <strong>Page</strong>
+                    <small>Mic / TX →</small>
                   </div>
 
-                  {micplot.frames.map((frame) => (
-                    <div className="micplot-frame-header" key={frame.movementId}>
-                      <strong>{frame.movementLabel}</strong>
-                      <small>{frame.pageLabel || "—"}</small>
-                    </div>
-                  ))}
-
                   {groups.map((group) => {
-                    const assignments = micplot.frameAssignments[group.tx_name] ?? [];
                     const members = membersByGroup.get(group.id) ?? [];
-
-                    return [
-                      <div className="micplot-group-header" key={group.id + "-header"}>
+                    return (
+                      <div className="micplot-tx-header" key={group.id}>
                         <strong>{group.tx_name}</strong>
                         <small>
                           {members.length
@@ -872,39 +879,102 @@ export function ProductionEditor(props: ProductionEditorProps) {
                                 .map((memberId, index) => {
                                   const name = castById.get(memberId) ?? "Unknown";
                                   const micId = group.mic_ids[index];
-                                  return micId ? name + " (" + micId + ")" : name;
+                                  return micId ? micId + " · " + name : name;
                                 })
-                                .join(" · ")
+                                .join(" / ")
                             : "Spare / unused"}
                         </small>
-                      </div>,
-                      ...micplot.frames.map((frame, frameIndex) => {
-                        const actorId = assignments[frameIndex] ?? null;
-                        const previousActor =
-                          frameIndex > 0 ? assignments[frameIndex - 1] ?? null : null;
-                        const actorName = actorId ? castById.get(actorId) ?? "Unknown" : "";
+                      </div>
+                    );
+                  })}
 
-                        return (
-                          <div
-                            className={
-                              actorId
-                                ? actorId !== previousActor
-                                  ? "micplot-cell assigned swap-start"
-                                  : "micplot-cell assigned"
-                                : "micplot-cell"
-                            }
-                            key={group.id + "-" + frame.movementId}
-                            title={
-                              actorName
-                                ? group.tx_name + " → " + actorName + " · " + frame.movementLabel
-                                : group.tx_name + " unused · " + frame.movementLabel
-                            }
-                          >
-                            {actorName ? <span>{actorName}</span> : null}
-                          </div>
-                        );
-                      }),
+                  {micplot.pages.flatMap((page) => {
+                    const row: React.ReactNode[] = [
+                      <div
+                        className={page.isInterval ? "micplot-page-label interval" : "micplot-page-label"}
+                        key={page.pageId + "-label"}
+                      >
+                        <strong>{page.pageLabel}</strong>
+                        <small>{page.comment || (page.isInterval ? "Interval" : "")}</small>
+                      </div>,
                     ];
+
+                    for (const group of groups) {
+                      const events = page.cells[group.tx_name] ?? [];
+                      const uniqueActors = Array.from(
+                        new Set(
+                          events
+                            .map((event) => event.actorId)
+                            .filter((actorId): actorId is string => Boolean(actorId)),
+                        ),
+                      );
+
+                      const cellClass = [
+                        "micplot-page-cell",
+                        uniqueActors.length ? "has-possession" : "",
+                        page.isInterval ? "interval" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+
+                      row.push(
+                        <div
+                          className={cellClass}
+                          key={page.pageId + "-" + group.id}
+                        >
+                          {uniqueActors.length ? (
+                            <div className="micplot-possession-stack">
+                              {uniqueActors.map((actorId) => {
+                                const actorEvents = events.filter(
+                                  (event) => event.actorId === actorId,
+                                );
+                                const actorName = castById.get(actorId) ?? "Unknown";
+                                const onSceneEvents = actorEvents.filter(
+                                  (event) => event.onScene && event.isMovementOnPage,
+                                );
+
+                                return (
+                                  <div
+                                    className={
+                                      onSceneEvents.length
+                                        ? "micplot-holder on-scene"
+                                        : "micplot-holder"
+                                    }
+                                    key={actorId}
+                                    title={
+                                      actorName +
+                                      (onSceneEvents.length
+                                        ? " · on scene at " +
+                                          onSceneEvents
+                                            .map((event) => event.movementLabel)
+                                            .join(", ")
+                                        : " · mic on actor, off scene")
+                                    }
+                                  >
+                                    <span className="holder-name">{actorName}</span>
+                                    {onSceneEvents.length ? (
+                                      <span className="movement-markers" aria-label="On scene">
+                                        {onSceneEvents.map((event, index) => (
+                                          <i
+                                            className="on-scene-marker"
+                                            key={event.movementLabel + "-" + index}
+                                            title={event.movementLabel}
+                                          >
+                                            ●
+                                          </i>
+                                        ))}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>,
+                      );
+                    }
+
+                    return row;
                   })}
                 </div>
               </div>
