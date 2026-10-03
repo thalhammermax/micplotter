@@ -146,9 +146,16 @@ function TabPanel({ tab }: { tab: Tab }) {
 export function WorkspaceShell({
   previewMode,
   workspaceName = "Northstar Sound",
+  productions = [
+    { id: "demo", name: "Demonstration Show", isTemplate: false },
+    { id: "template", name: "Spring Musical Template", isTemplate: true },
+  ],
+  compact = false,
 }: {
   previewMode: boolean;
   workspaceName?: string;
+  productions?: Array<{ id: string; name: string; isTemplate: boolean }>;
+  compact?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("Show");
   const subtitle = useMemo(() => {
@@ -184,14 +191,15 @@ export function WorkspaceShell({
 
         <nav className="production-nav">
           <div className="nav-label">Productions</div>
-          <button className="production-link active">
-            <span className="production-dot" />
-            Demonstration Show
-          </button>
-          <button className="production-link">
-            <span className="production-dot muted" />
-            Spring Musical Template
-          </button>
+          {productions.map((production, index) => (
+            <button
+              className={index === 0 ? "production-link active" : "production-link"}
+              key={production.id}
+            >
+              <span className={production.isTemplate ? "production-dot muted" : "production-dot"} />
+              {production.name}
+            </button>
+          ))}
           <button className="new-production">+ New production</button>
         </nav>
 
@@ -202,14 +210,14 @@ export function WorkspaceShell({
         </div>
       </aside>
 
-      <section className="workspace-main">
+      <section className={compact ? "workspace-main compact" : "workspace-main"}>
         {previewMode ? (
           <div className="preview-banner">
             Preview mode — connect Supabase to enable accounts, saving, invitations, and collaboration.
           </div>
         ) : null}
 
-        <header className="workspace-header">
+        {!compact ? <header className="workspace-header">
           <div>
             <div className="eyebrow">Demonstration Show</div>
             <h1>{tab}</h1>
@@ -222,9 +230,9 @@ export function WorkspaceShell({
             <button className="secondary-button small">Share</button>
             <button className="primary-button small">Save</button>
           </div>
-        </header>
+        </header> : null}
 
-        <div className="tabs" role="tablist" aria-label="MicPlot production sections">
+        {!compact ? <div className="tabs" role="tablist" aria-label="MicPlot production sections">
           {tabs.map((item) => (
             <button
               key={item}
@@ -236,9 +244,9 @@ export function WorkspaceShell({
               {item}
             </button>
           ))}
-        </div>
+        </div> : null}
 
-        <section className="work-panel">
+        {!compact ? <section className="work-panel">
           <div className="panel-toolbar">
             <div className="search-box">Search {tab.toLowerCase()}…</div>
             <div className="toolbar-buttons">
@@ -248,7 +256,7 @@ export function WorkspaceShell({
             </div>
           </div>
           <TabPanel tab={tab} />
-        </section>
+        </section> : null}
       </section>
     </main>
   );
