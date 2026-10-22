@@ -393,7 +393,7 @@ const RULES = [
   { id: 14, key: "unmiked", label: "Mic as many actors as possible", hint: "When there aren't enough mics, leave as few actors without one as possible. Higher-priority actors get mics first." },
 ];
 const DEFAULT_RULES = [14, 1, 2, 3, 4, 5, 6, 7, 8].map(id => ({ id, on: [14, 1, 2, 3, 4, 5].includes(id) }));
-const EFFORT = { rough: 1, quick: 30, medium: 150, thorough: 600 };
+const EFFORT = { rough: 2, quick: 30, medium: 150, thorough: 600 };
 const WHEN_MIKED = [
   ["normal", "While on stage"], ["never", "No mic"], ["always", "Whole show"],
   ["first-last", "First entrance until last exit"], ["start-last", "Top of show until last exit"], ["first-end", "First entrance until end of show"],
@@ -598,19 +598,21 @@ function computePlot(show, opts = {}) {
     { roomy: true, keepProb: 0, order: "start" },
     { roomy: true, keepProb: 1, order: "start" },
     { roomy: false, keepProb: 0, order: "priority" },
-  ].slice(0, tries === 1 ? 2 : 4);
+  ].slice(0, tries <= 2 ? 2 : 4);
   const rnd = rng32(show.scenes.length * 7919 + show.actors.length * 104729 + 17);
   for (let i = candidates.length; i < tries; i++) {
     candidates.push({ roomy: rnd() < 0.6, keepProb: [0, 0, 0.2, 0.5, 0.8][Math.floor(rnd() * 5)], order: rnd() < 0.7 ? "start" : "priority", rnd: rng32(Math.floor(rnd() * 2 ** 31)) });
   }
   let best = null, bestScore = null, minMics = Infinity;
+  const seen = new Set();
   for (const c of candidates) {
     const plan = linkPlan(buildPlan(base, c));
+    seen.add(plan.spans.map(sp => `${sp.actorId}:${sp.mic}:${sp.start}-${sp.end}`).sort().join("|") + "#" + plan.unmiked.length);
     const score = scorePlan(base, plan);
     if (!plan.unmiked.length) minMics = Math.min(minMics, score.mics);
     if (!best || comparePlans(score, bestScore, show.settings.rules) < 0) { best = plan; bestScore = score; }
   }
-  return finishPlot(show, base, best, bestScore, { minMics: minMics === Infinity ? bestScore.mics : minMics, tried: candidates.length });
+  return finishPlot(show, base, best, bestScore, { minMics: minMics === Infinity ? bestScore.mics : minMics, tried: candidates.length, distinct: seen.size });
 }
 
 function finishPlot(show, base, plan, score, extra) {
@@ -640,7 +642,7 @@ function finishPlot(show, base, plan, score, extra) {
     S, gap: base.gap, avail: base.avail, txMode: base.set.txMode, spans: plan.spans, unmiked: plan.unmiked,
     micNums, micCount: micNums.length, maxMic: micNums.length ? micNums[micNums.length - 1] : 0,
     grid, points, handoffs, peak, on: base.on, charsIn: base.charsIn, actorById: base.actorById,
-    score, minMics: extra.minMics, tried: extra.tried,
+    score, minMics: extra.minMics, tried: extra.tried, distinct: extra.distinct,
   };
 }
 
@@ -1563,7 +1565,7 @@ function renderPlotPanel() {
             <div class="field"><label for="ps-fast">A swap is rushed if it has fewer than this many scenes</label><span class="hint" id="ps-fast-hint">Swaps with less time than this count as rushed. Swaps across the intermission never count as rushed.</span><input type="number" id="ps-fast" min="0" max="20" inputmode="numeric" value="${set.fastGap}" aria-describedby="ps-fast-hint"></div>
             <label class="check"><input type="checkbox" id="ps-one" ${set.onePerCast ? "checked" : ""}> Never share a mic between actors</label>
             <div class="field"><label for="ps-effort">Search</label><span class="hint" id="ps-effort-hint">How many different plots to try before picking the best. Most careful takes longer on big shows.</span>
-              <select id="ps-effort" aria-describedby="ps-effort-hint">${[["rough", "Fastest (1 plot)"], ["quick", "Quick (30 plots)"], ["medium", "Balanced (150 plots)"], ["thorough", "Most careful (600 plots)"]].map(([k, l]) => `<option value="${k}" ${set.effort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+              <select id="ps-effort" aria-describedby="ps-effort-hint">${[["rough", "Fastest (2 plots)"], ["quick", "Quick (30 plots)"], ["medium", "Balanced (150 plots)"], ["thorough", "Most careful (600 plots)"]].map(([k, l]) => `<option value="${k}" ${set.effort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
           </div>
           <div style="display:grid;gap:.6rem;align-content:start;min-width:0">
             <h4 style="margin:0" id="h-rules">Priorities, most important first</h4>
@@ -1576,7 +1578,7 @@ function renderPlotPanel() {
             <div class="btns"><button type="button" class="btn secondary" id="ps-reset">Reset priorities to default</button></div>
           </div>
         </div>
-        <p class="hint">Tried ${plot.tried} plot${plot.tried === 1 ? "" : "s"}.</p>
+        <p class="hint">Tried ${plot.tried} plots${plot.distinct < plot.tried ? ` (${plot.distinct} different: smaller shows have fewer possible plots)` : ""} and kept the best one.</p>
       </details>
     </section>
 
