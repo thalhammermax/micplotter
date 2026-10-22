@@ -15,3 +15,10 @@
   for = "/index.html"
   [headers.values]
     Cache-Control = "no-cache"
+
+# One address for everyone, so shows saved in the browser always live under micplotter.app
+[[redirects]]
+  from = "https://micplotter.netlify.app/*"
+  to = "https://micplotter.app/:splat"
+  status = 301
+  force = true
