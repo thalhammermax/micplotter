@@ -376,7 +376,7 @@ function emptyShow() {
 
 /* ---------- The mic plot engine ----------
    The plot is chosen by priorities you put in order:
-   1. Work out when each actor needs a mic ("spans"), using their "When miked" setting.
+   1. Work out when each actor needs a mic ("spans"), using their "Needs a mic" setting.
    2. Build many candidate plots. Each one hands spans to mics in a slightly
       different way (more candidates = a more thorough search).
    3. Score every candidate on each rule and keep the best one, comparing the
@@ -1545,7 +1545,7 @@ function renderPlotPanel() {
       <div class="stat"><span class="label">Mics used</span><span class="value">${plot.micCount}</span><span class="hint">Fewest possible: ${plot.minMics}</span><span class="pill ${short ? "bad" : "good"}">${short ? (plot.unmiked.length ? "! Some actors have no mic" : `! ${plot.micCount - plot.avail} more than you have`) : `✓ Fits your ${plot.avail} mics`}</span></div>
       <div class="stat"><span class="label">Mic swaps</span><span class="value">${plot.handoffs.length}</span><span class="hint">${sc.fast} rushed, ${sc.nonIntermission} outside the intermission</span></div>
       <div class="stat"><span class="label">Actors on one mic all show</span><span class="value">${sc.keepersCount}</span><span class="hint">of ${new Set(plot.spans.map(s => s.actorId)).size} on mic</span></div>
-      <div class="stat"><span class="label">Most swaps at one change</span><span class="value">${sc.peak}</span><span class="hint">${sc.refits} re-miked</span></div>
+      <div class="stat"><span class="label">Most swaps at one change</span><span class="value">${sc.peak}</span><span class="hint">${sc.refits} re-mic'd</span></div>
     </div>
 
     <section class="card no-print" aria-labelledby="h-settings">
@@ -1655,7 +1655,7 @@ function wallByActor() {
         const onStage = plot.on.get(a.id)[i];
         if (!sp) {
           if (onStage && none.some(s => s.start <= i && i <= s.end)) return `<td class="nomic">No mic</td>`;
-          if (onStage) return `<td class="on-nomic" title="On stage, not miked">–<span class="sr-only">On stage, not miked</span></td>`;
+          if (onStage) return `<td class="on-nomic" title="On stage, not mic'd">–<span class="sr-only">On stage, not mic'd</span></td>`;
           return `<td><span class="sr-only">no mic</span></td>`;
         }
         const swap = sp.start === i && sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId;
