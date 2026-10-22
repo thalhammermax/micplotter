@@ -1510,13 +1510,23 @@ function renderPlotPanel() {
     <div class="panel-head">
       <h2>Mic plot</h2>
       <p>This plot updates as you edit. Mics go on at the preset and stay on until the end of the show, unless a mic is needed for a swap. Change how the plot is chosen in Plot settings.</p>
-      <div class="row no-print">
-        <div class="field" style="flex:0 1 20rem"><label for="pp-which">Print</label>
-          <select id="pp-which">${[["all", "Wall chart, running order and checks"], ["wall", "Wall chart only"], ["run", "Running order only"]].map(([k, l]) => `<option value="${k}" ${prefs.plotPrint === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-        <div class="field" style="flex:0 1 14rem"><label for="pp-view">Wall chart rows</label>
-          <select id="pp-view"><option value="mic" ${view === "mic" ? "selected" : ""}>One per mic</option><option value="actor" ${view === "actor" ? "selected" : ""}>One per actor</option></select></div>
-        <button type="button" class="btn" id="pp-print">Print mic plot</button>
-      </div>
+      <section class="card no-print" aria-labelledby="h-wallpdf" style="margin-top:.5rem">
+        <h3 id="h-wallpdf">Wall chart PDF</h3>
+        <p class="hint">A clean wall chart for the crew, with a title, key and page numbers, sized to fill the page. Download it to share, or print it.</p>
+        <div class="row">
+          <div class="field" style="flex:0 1 13rem"><label for="wp-rows">Rows</label>
+            <select id="wp-rows"><option value="mic" ${(prefs.wallPdf?.rows || view) === "mic" ? "selected" : ""}>One per mic</option><option value="actor" ${(prefs.wallPdf?.rows || view) === "actor" ? "selected" : ""}>One per actor</option></select></div>
+          <div class="field" style="flex:0 1 15rem"><label for="wp-paper">Paper</label>
+            <select id="wp-paper">${Object.entries(PAPER).map(([k, l]) => `<option value="${k}" ${(prefs.wallPdf?.paper || "letter") === k ? "selected" : ""}>${l}, landscape</option>`).join("")}</select></div>
+          <div class="field" style="flex:0 1 11rem"><label for="wp-size">Text</label>
+            <select id="wp-size"><option value="normal" ${prefs.wallPdf?.size !== "large" ? "selected" : ""}>Normal</option><option value="large" ${prefs.wallPdf?.size === "large" ? "selected" : ""}>Large</option></select></div>
+        </div>
+        <div class="btns">
+          <button type="button" class="btn" id="wp-pdf">Download wall chart PDF</button>
+          <button type="button" class="btn secondary" id="wp-print">Print wall chart</button>
+        </div>
+        <p class="hint" id="wp-msg" role="status"></p>
+      </section>
     </div>
     <div class="print-only print-head">
       <strong>${esc(show.title)}</strong> · Mic plot · ${plot.micCount} mic${plot.micCount === 1 ? "" : "s"}, ${plot.handoffs.length} swap${plot.handoffs.length === 1 ? "" : "s"} · Printed ${esc(new Date().toLocaleDateString())}
@@ -1592,16 +1602,6 @@ function renderPlotPanel() {
       : `<p class="hint">No understudies set. Add them on the Cast tab to check that a cover can still get a mic.</p>`}
     </section>`;
 }
-function printPlot() {
-  const which = $("#pp-which")?.value || "all";
-  const panel = $("#panel-plot");
-  panel.dataset.printMode = which;
-  document.body.classList.add("printing-plot");
-  const done = () => { document.body.classList.remove("printing-plot"); delete panel.dataset.printMode; window.removeEventListener("afterprint", done); };
-  window.addEventListener("afterprint", done);
-  window.print();
-  setTimeout(done, 1000);
-}
 function ruleValue(key) {
   const sc = plot.score;
   if (key === "keepers") return `${sc.keepersCount} actors`;
@@ -1660,8 +1660,6 @@ function plotSetting(fn, focusId) { mutate(fn); renderPlotPanel(); if (focusId) 
 $("#panel-plot").addEventListener("change", e => {
   const el = e.target, set = show.settings;
   if (el.name === "wc-view") { prefs.plotView = el.value; applyPrefs(); renderPlotPanel(); document.querySelector(`input[name="wc-view"][value="${el.value}"]`)?.focus(); return; }
-  if (el.id === "pp-which") { prefs.plotPrint = el.value; applyPrefs(); return; }
-  if (el.id === "pp-view") { prefs.plotView = el.value; applyPrefs(); renderPlotPanel(); $("#pp-view")?.focus(); return; }
   if (el.name === "ps-tx") return plotSetting(() => { set.txMode = el.value; }, el.id);
   const nums = { "ps-mics": ["mics", 0, 999], "ps-gap": ["swapGap", 0, 20], "ps-fast": ["fastGap", 0, 20] };
   if (nums[el.id]) {
@@ -1686,7 +1684,8 @@ $("#panel-plot").addEventListener("click", e => {
     announce(`Moved to position ${j + 1} of ${rules.length}. Plot updated: ${plot.micCount} mics, ${plot.handoffs.length} swaps.`);
     return;
   }
-  if (e.target.id === "pp-print") { printPlot(); return; }
+  if (e.target.id === "wp-pdf") { wallPDF("download"); return; }
+  if (e.target.id === "wp-print") { wallPDF("print"); return; }
   if (e.target.id === "ps-reset") plotSetting(() => { show.settings.rules = DEFAULT_RULES.map(r => ({ ...r })); }, "ps-reset");
 });
 $("#panel-plot").addEventListener("toggle", e => { if (e.target.id === "ps-details") { prefs.plotSettingsOpen = e.target.open; applyPrefs(); } }, true);
@@ -1711,6 +1710,191 @@ function runningOrderHTML() {
       ${pt.fit.length ? `<ul aria-label="Fit">${pt.fit.sort((a, b) => a.mic - b.mic).map(fitLine).join("")}</ul>` : ""}</li>`);
   }
   return out.join("");
+}
+
+/* ---------- Wall chart PDF ----------
+   A crew-ready PDF of the wall chart: title block, key, page numbers, and a chart
+   sized to fill the page. jsPDF and the font load only when someone asks for it. */
+const PDF_LIBS = [
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js",
+];
+const PAPER = { letter: "Letter (8½ × 11 in)", legal: "Legal (8½ × 14 in)", tabloid: "Tabloid (11 × 17 in)", a4: "A4", a3: "A3" };
+let pdfReady = null;
+function loadPdfTools() {
+  pdfReady ||= (async () => {
+    for (const src of PDF_LIBS) await loadScript(src);
+    const font = async f => {
+      const buf = new Uint8Array(await (await fetch(`fonts/AtkinsonHyperlegible-${f}.ttf`)).arrayBuffer());
+      let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      return btoa(bin);
+    };
+    return { regular: await font("Regular"), bold: await font("Bold") };
+  })().catch(err => { pdfReady = null; throw err; });
+  return pdfReady;
+}
+// Short, unambiguous names for the cells: first name, plus an initial if two actors share it
+function chartNames() {
+  const out = new Map(), firsts = new Map();
+  show.actors.forEach(a => { const f = firstName(a.name); firsts.set(f, (firsts.get(f) || 0) + 1); });
+  show.actors.forEach(a => {
+    const parts = (a.name || "").trim().split(/\s+/), f = parts[0] || "?";
+    out.set(a.id, firsts.get(f) > 1 && parts[1] ? `${f} ${parts[parts.length - 1][0]}.` : f);
+  });
+  return out;
+}
+
+async function buildWallPDF(opts) {
+  const fonts = await loadPdfTools();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: opts.paper || "letter" });
+  doc.addFileToVFS("AH-Regular.ttf", fonts.regular); doc.addFont("AH-Regular.ttf", "Atkinson", "normal");
+  doc.addFileToVFS("AH-Bold.ttf", fonts.bold); doc.addFont("AH-Bold.ttf", "Atkinson", "bold");
+  doc.setFont("Atkinson", "normal");
+  doc.setProperties({ title: `${show.title} – Wall chart`, subject: "Mic plot wall chart", creator: "MicPlotter (micplotter.app)" });
+  try { doc.setLanguage("en-US"); } catch {}
+
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const M = 28, headTop = M, tableTop = M + 62, footer = 22;
+  const S = plot.S, names = chartNames(), byActor = opts.rows === "actor";
+  const large = opts.size === "large";
+
+  // Build rows and a matching grid of what each cell shows
+  const rows = [], meta = [];
+  if (!byActor) {
+    for (const m of plot.micNums) {
+      const cells = plot.grid.get(m).map((cell, i) => {
+        if (!cell) return { text: "" };
+        const sp = cell.span;
+        return { text: names.get(sp.actorId), on: cell.onStage, held: !cell.onStage, fit: fitsAt(sp, i), off: offAt(sp, i), swap: sp.start === i && sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId };
+      });
+      rows.push([String(m), ...cells.map(c => c.text)]); meta.push(cells);
+    }
+  } else {
+    const firstMic = id => Math.min(...plot.spans.filter(s => s.actorId === id).map(s => s.mic), 9999);
+    for (const a of [...show.actors].sort((x, y) => firstMic(x.id) - firstMic(y.id))) {
+      const mine = plot.spans.filter(s => s.actorId === a.id);
+      const none = plot.unmiked.filter(s => s.actorId === a.id);
+      const cells = show.scenes.map((_, i) => {
+        const sp = mine.find(s => s.start <= i && i <= s.end), onStage = plot.on.get(a.id)[i];
+        if (!sp) return onStage && none.some(s => s.start <= i && i <= s.end) ? { text: "NO MIC", nomic: true } : { text: "" };
+        return { text: String(sp.mic), on: onStage, held: !onStage, fit: fitsAt(sp, i), off: offAt(sp, i), swap: sp.start === i && sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId };
+      });
+      rows.push([a.name, ...cells.map(c => c.text)]); meta.push(cells);
+    }
+  }
+
+  // Size the text so every scene fits across one page when possible
+  const firstColW = byActor ? Math.min(150, Math.max(70, ...show.actors.map(a => doc.getStringUnitWidth(a.name) * 9 + 14))) : 34;
+  const avail = W - 2 * M - firstColW;
+  const longest = Math.max(4, ...rows.flatMap(r => r.slice(1).map(t => t.length)), ...show.scenes.map(s => (s.code || "").length));
+  // Rows grow to fill the page height on smaller shows, so the chart reads from across a room
+  const headH = 58, bodyH = H - tableTop - M - footer - headH;
+  const rowH = Math.max(15, Math.min(large ? 46 : 40, bodyH / Math.max(1, rows.length)));
+  const target = Math.min(large ? 16 : 13, rowH * (large ? 0.5 : 0.42)), minFs = large ? 10 : 8;
+  const colNeed = f => longest * f * 0.56 + 10;
+  // Fit every scene on one page if the text can stay readable; otherwise split scenes evenly across pages
+  let fs = target;
+  while (fs > minFs && colNeed(fs) * S > avail) fs -= 0.5;
+  let parts = 1;
+  if (colNeed(fs) * S > avail) { parts = Math.ceil(S / Math.max(1, Math.floor(avail / colNeed(minFs)))); fs = minFs; }
+  const per = Math.ceil(S / parts);
+  const chunks = Array.from({ length: parts }, (_, k) => [k * per, Math.min(S, (k + 1) * per)]);
+  const summary = `${plot.micCount} mic${plot.micCount === 1 ? "" : "s"} · ${plot.handoffs.length} swap${plot.handoffs.length === 1 ? "" : "s"}`;
+  const sub = [show.source?.venue, show.source?.date].filter(Boolean).join(" · ");
+  let partLabel = "";
+
+  const drawHeader = () => {
+    doc.setFont("Atkinson", "bold"); doc.setFontSize(18); doc.setTextColor(0);
+    doc.text(show.title || "Untitled show", M, headTop + 14);
+    doc.setFont("Atkinson", "normal"); doc.setFontSize(10); doc.setTextColor(60);
+    doc.text(["Wall chart", byActor ? "by actor" : "by mic", sub, summary, partLabel].filter(Boolean).join("  ·  "), M, headTop + 30);
+    doc.text(`Printed ${new Date().toLocaleDateString(undefined, { dateStyle: "medium" })}`, W - M, headTop + 14, { align: "right" });
+    let x = M, y = headTop + 44; doc.setFontSize(8.5); doc.setTextColor(40);
+    const key = (draw, label) => { draw(x, y - 7); doc.text(label, x + 16, y); x += 16 + doc.getTextWidth(label) + 16; };
+    key((kx, ky) => { doc.setDrawColor(120); doc.setFillColor(255); doc.rect(kx, ky, 11, 9, "FD"); doc.setFont("Atkinson", "bold"); doc.setFontSize(7); doc.setTextColor(0); doc.text("A", kx + 3.2, ky + 7); doc.setFont("Atkinson", "normal"); doc.setFontSize(8.5); doc.setTextColor(40); }, "On stage (bold)");
+    key((kx, ky) => { doc.setDrawColor(120); doc.setFillColor(222); doc.rect(kx, ky, 11, 9, "FD"); }, "Wearing it off stage (grey)");
+    key((kx, ky) => { doc.setDrawColor(120); doc.setFillColor(255); doc.rect(kx, ky, 11, 9, "FD"); doc.setFillColor(0); doc.triangle(kx + 1.5, ky + 1, kx + 1.5, ky + 5, kx + 5, ky + 3, "F"); }, "Mic goes on before this scene (top left)");
+    key((kx, ky) => { doc.setDrawColor(120); doc.setFillColor(255); doc.rect(kx, ky, 11, 9, "FD"); doc.setFillColor(0); doc.triangle(kx + 9.5, ky + 1, kx + 9.5, ky + 5, kx + 6, ky + 3, "F"); }, "Mic comes off after this scene (top right)");
+    key((kx, ky) => { doc.setDrawColor(120); doc.setFillColor(255); doc.rect(kx, ky, 11, 9, "FD"); doc.setFillColor(0); doc.rect(kx, ky, 3, 9, "F"); }, "Swap");
+    if (byActor && plot.unmiked.length) key((kx, ky) => { doc.setFillColor(244, 199, 199); doc.rect(kx, ky, 11, 9, "F"); }, "No mic available");
+    doc.setDrawColor(0); doc.setLineWidth(0.8); doc.line(M, headTop + 52, W - M, headTop + 52);
+  };
+
+  chunks.forEach(([from, to], k) => {
+    if (k > 0) doc.addPage();
+    const n = to - from, colW = Math.max(colNeed(fs), avail / Math.max(1, n));
+    const sc = show.scenes.slice(from, to);
+    partLabel = parts > 1 ? `Scenes ${sc[0]?.code || from + 1}–${sc[n - 1]?.code || to} (part ${k + 1} of ${parts})` : "";
+    doc.autoTable({
+      head: [[byActor ? "Actor" : "Mic", ...sc.map(s => `${s.code || ""}${s.intermission ? "\nINT" : ""}`)], ["", ...sc.map(s => s.intermission ? "Intermission" : (s.name || ""))]],
+      body: rows.map(r => [r[0], ...r.slice(1 + from, 1 + to)]),
+      startY: tableTop, margin: { top: tableTop, left: M, right: M, bottom: M + footer },
+      theme: "grid", tableWidth: firstColW + colW * n,
+      styles: { font: "Atkinson", fontSize: fs, cellPadding: { top: 3.5, bottom: 3.5, left: 2.5, right: 2.5 }, halign: "center", valign: "middle", lineColor: 150, lineWidth: 0.5, textColor: 0, overflow: "ellipsize", minCellHeight: Math.max(fs * 2, rowH) },
+      headStyles: { fillColor: [235, 238, 241], textColor: 0, fontStyle: "bold", fontSize: fs + 0.5 },
+      columnStyles: { 0: { cellWidth: firstColW, fontStyle: "bold", halign: byActor ? "left" : "center", fillColor: [235, 238, 241], fontSize: byActor ? Math.min(fs + 1, 10) : fs + 2 } },
+      didParseCell: d => {
+        if (d.column.index > 0) d.cell.styles.cellWidth = colW;
+        if (d.section === "head" && d.row.index === 1) { d.cell.styles.fontStyle = "normal"; d.cell.styles.fontSize = Math.max(5.5, Math.min(fs - 2.5, 8)); d.cell.styles.textColor = 70; d.cell.styles.overflow = "linebreak"; d.cell.styles.minCellHeight = 0; }
+        if (d.section !== "body" || d.column.index === 0) return;
+        const c = meta[d.row.index][from + d.column.index - 1];
+        if (show.scenes[from + d.column.index - 1]?.intermission && !c.text) d.cell.styles.fillColor = [246, 246, 246];
+        if (c.on) d.cell.styles.fontStyle = "bold";
+        if (c.held) { d.cell.styles.fillColor = [222, 222, 222]; d.cell.styles.textColor = 70; }
+        if (c.nomic) { d.cell.styles.fillColor = [244, 199, 199]; d.cell.styles.fontStyle = "bold"; d.cell.styles.fontSize = Math.max(5.5, fs - 2); }
+      },
+      didDrawCell: d => {
+        if (d.section !== "body" || d.column.index === 0) return;
+        const c = meta[d.row.index][from + d.column.index - 1], { x, y, width: w, height: h } = d.cell;
+        // Markers sit in the top corners so they never crowd the name
+        const t = Math.max(2.5, Math.min(5, h / 5)), top = y + 2.5, lx = x + (c.swap ? 4.5 : 2.5);
+        doc.setFillColor(0);
+        if (c.fit) doc.triangle(lx, top, lx, top + 2 * t, lx + t * 1.6, top + t, "F");
+        if (c.off) doc.triangle(x + w - 2.5, top, x + w - 2.5, top + 2 * t, x + w - 2.5 - t * 1.6, top + t, "F");
+        if (c.swap) doc.rect(x, y, 2.6, h, "F");
+      },
+      didDrawPage: () => drawHeader(),
+    });
+  });
+
+  // Footer with page numbers
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p); doc.setFont("Atkinson", "normal"); doc.setFontSize(8.5); doc.setTextColor(90);
+    doc.text("Made with MicPlotter · micplotter.app", M, H - M + 6);
+    doc.text(`Page ${p} of ${pages}`, W - M, H - M + 6, { align: "right" });
+  }
+  return doc;
+}
+async function wallPDF(action) {
+  const btn = $(action === "print" ? "#wp-print" : "#wp-pdf");
+  const status = $("#wp-msg");
+  const opts = { rows: $("#wp-rows")?.value || "mic", paper: $("#wp-paper")?.value || "letter", size: $("#wp-size")?.value || "normal" };
+  prefs.wallPdf = opts; applyPrefs();
+  // Open the print tab now, while the click still counts, so pop-up blockers allow it
+  const win = action === "print" ? window.open("", "_blank") : null;
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = "Making the PDF…";
+  try {
+    const doc = await buildWallPDF(opts);
+    const file = `${slug(show.title)}-wall-chart.pdf`;
+    if (action === "print") {
+      doc.autoPrint();
+      const url = doc.output("bloburl");
+      if (win) win.location.href = url; else window.open(url, "_blank");
+      if (status) status.textContent = "The wall chart opened in a new tab, ready to print.";
+    } else {
+      doc.save(file);
+      if (status) status.textContent = `Saved ${file} to your downloads.`;
+    }
+    announce(status?.textContent || "");
+  } catch (err) {
+    win?.close();
+    if (status) status.textContent = "The PDF couldn't be made. Check your internet connection and try again.";
+    announce(status?.textContent || "");
+  }
+  if (btn) btn.disabled = false;
 }
 
 /* ---------- Panel: Paperwork ---------- */
