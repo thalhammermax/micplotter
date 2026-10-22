@@ -1030,9 +1030,11 @@ function headerSavePill() {
   if (!LOCAL.lsOk && !LOCAL.idbOk && LOCAL.db === null && LOCAL.checked) return pill("bad", "hdr-backup", "⚠ Not saving on this device");
   if (LOCAL.error) return pill("bad", "hdr-backup", "⚠ Saving problem");
   if (show.driveFileId) {
+    const at = drive.lastSavedAt ? ` · ${new Date(drive.lastSavedAt).toLocaleTimeString(undefined, { timeStyle: "short" })}` : "";
+    if (drive.conflict) return pill("bad", "hdr-drive-check", "⚠ Drive save needs you");
     if (driveDirty() && driveAutoOn() && drive.autoPaused) return pill("warn", "hdr-drive", "⚠ Drive auto-save paused");
-    if (driveDirty() && driveAutoOn() && driveTokenFresh()) return pill("good", "", "☁ Auto-saving to Drive…");
-    return driveDirty() ? pill("warn", "hdr-drive", "● Not saved to Drive") : pill("good", "", "☁ Saved to Drive");
+    if (driveDirty() && driveAutoOn() && driveTokenFresh()) return pill("good", "", drive.busy ? "☁ Saving to Drive…" : `☁ Auto-save to Drive pending${at ? ` (last${at.replace(" ·", "")})` : ""}`);
+    return driveDirty() ? pill("warn", "hdr-drive", "● Not saved to Drive") : pill("good", "", `☁ Saved to Drive${at}`);
   }
   const st = backupState();
   if (st === "never" || st === "behind") return pill("warn", "hdr-backup", st === "never" ? "● Not backed up" : "● Changes not backed up");
@@ -1049,6 +1051,7 @@ function renderHeader() {
     <button type="button" class="btn secondary" id="undoBtn" ${undoStack.length ? "" : "disabled"}>Undo</button>`;
   $("#undoBtn").addEventListener("click", undo);
   $("#hdr-drive")?.addEventListener("click", () => { if (drive.token || drive.user) driveSave(); else { selectTab("show"); $("#dr-connect")?.focus(); } });
+  $("#hdr-drive-check")?.addEventListener("click", () => { selectTab("show"); document.querySelector("#drive-area .conflict")?.scrollIntoView({ block: "center" }); document.querySelector("#drive-area .conflict button")?.focus(); });
   $("#hdr-backup")?.addEventListener("click", () => { selectTab("show"); $("#h-file")?.scrollIntoView({ block: "start" }); $("#b-export")?.focus(); });
 }
 
@@ -1211,7 +1214,7 @@ const GOOGLE = {
 const drive = { token: null, exp: 0, client: null, user: null, ready: null, files: [], busy: false, msg: "", conflict: null };
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3";
-const FILE_FIELDS = "id,name,version,modifiedTime,webViewLink,mimeType,capabilities(canEdit),lastModifyingUser(displayName),owners(displayName),ownedByMe";
+const FILE_FIELDS = "id,name,version,headRevisionId,modifiedTime,webViewLink,mimeType,capabilities(canEdit),lastModifyingUser(displayName,me),owners(displayName),ownedByMe";
 
 function loadScript(src) {
   return new Promise((ok, fail) => {
@@ -1263,6 +1266,7 @@ function multipart(meta, body) {
 // The show as stored in a file: without the link to its Drive file
 function showForFile() { const copy = JSON.parse(JSON.stringify(show)); delete copy.driveFileId; delete copy.example; delete copy.localId; return JSON.stringify(copy, null, 2); }
 function driveVersions() { return (prefs.driveVersions ||= {}); }
+function driveRevs() { return (prefs.driveRevs ||= {}); }
 function driveSavedText() { return (prefs.driveSaved ||= {}); }
 function driveDirty() { return !!show.driveFileId && driveSavedText()[show.driveFileId] !== showForFile(); }
 
@@ -1303,7 +1307,7 @@ async function driveRefreshList() {
 
 async function driveSave({ asCopy = false, force = false, auto = false } = {}) {
   if (drive.busy) return;
-  drive.busy = true; drive.conflict = null; renderDriveArea(auto ? "Auto-saving to Google Drive…" : "Saving to Google Drive…");
+  drive.busy = true; drive.conflict = null; renderDriveArea(auto ? "Auto-saving to Google Drive…" : "Saving to Google Drive…"); renderHeader();
   try {
     const body = showForFile();
     const name = `${(show.title || "Untitled show").replace(/[\\/:*?"<>|]+/g, "-")}.micplotter.json`;
@@ -1316,8 +1320,11 @@ async function driveSave({ asCopy = false, force = false, auto = false } = {}) {
         drive.msg = `You can view “${now.name}” but not change it. Save a copy to your own Drive instead.`;
         throw null;
       }
-      const known = driveVersions()[id];
-      if (!force && known && now.version !== known) {
+      // Only a content change saved by someone else counts. Google also bumps its version number
+      // for its own processing, and the person's own earlier saves must never look like a clash.
+      const knownRev = driveRevs()[id];
+      const changedContent = knownRev ? now.headRevisionId !== knownRev : (driveVersions()[id] && now.version !== driveVersions()[id]);
+      if (!force && changedContent && !now.lastModifyingUser?.me) {
         drive.conflict = { kind: "newer", file: now };
         drive.msg = `${now.lastModifyingUser?.displayName || "Someone"} saved a newer version of “${now.name}” at ${new Date(now.modifiedTime).toLocaleString()}.`;
         throw null;
@@ -1330,7 +1337,8 @@ async function driveSave({ asCopy = false, force = false, auto = false } = {}) {
       file = await driveJSON(`${DRIVE_UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`, { method: "POST", headers: mp.headers, body: mp.body });
       show.driveFileId = file.id;
     }
-    driveVersions()[file.id] = file.version;
+    driveVersions()[file.id] = file.version; driveRevs()[file.id] = file.headRevisionId || "";
+    drive.lastSavedAt = Date.now();
     driveSavedText()[file.id] = body;
     applyPrefs();
     await driveRefreshList().catch(() => {});
@@ -1365,7 +1373,7 @@ async function driveOpenFile(id) {
       s.scenes.forEach(x => { x.id ||= uid(); }); s.characters.forEach(x => { x.scenes ||= []; });
       normaliseShow(s); s.driveFileId = id; delete s.localId;
       await switchShow(s, { reuseDrive: true });
-      driveVersions()[id] = meta.version; driveSavedText()[id] = showForFile(); applyPrefs();
+      driveVersions()[id] = meta.version; driveRevs()[id] = meta.headRevisionId || ""; driveSavedText()[id] = showForFile(); applyPrefs();
       const who = meta.ownedByMe ? "" : ` (shared by ${meta.owners?.[0]?.displayName || "someone else"}${meta.capabilities?.canEdit ? "" : ", view only"})`;
       drive.msg = `Opened “${meta.name}” from Google Drive${who}.`;
     }
