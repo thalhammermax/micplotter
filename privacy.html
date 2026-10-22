@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · MicPlotter</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&display=swap">
+<style>
+:root { --bg: #f3f5f7; --fg: #14212b; --muted: #475866; --accent: #0a5c66; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f171d; --fg: #eef3f6; --muted: #b0c0cb; --accent: #5fc4cf; color-scheme: dark; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 1.0625rem/1.6 "Atkinson Hyperlegible Next", system-ui, sans-serif; }
+main { max-width: 68ch; margin: 0 auto; padding: 2rem max(16px, env(safe-area-inset-left, 0px)) 4rem; }
+h1 { font-size: 2rem; margin: 0 0 .25rem; } h2 { font-size: 1.25rem; margin-top: 2rem; }
+.muted { color: var(--muted); } a { color: var(--accent); }
+:focus-visible { outline: 3px solid #b3470b; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MicPlotter privacy policy</h1>
+  <p class="muted">Last updated 21 October 2026</p>
+
+  <p>MicPlotter is a free tool for planning wireless microphones for a show. This page explains what happens to your information when you use it.</p>
+
+  <h2>Shows you make</h2>
+  <p>Your shows are stored in your own web browser, in files you choose to save, or in your own Google Drive if you connect it. MicPlotter has no server of its own and never receives a copy of your shows.</p>
+
+  <h2>Google Drive</h2>
+  <p>If you choose to connect Google Drive, MicPlotter asks for permission to see and change only the files it creates or that you open with it. It can't see any other files in your Drive.</p>
+  <p>MicPlotter uses this access only to save and open your show files at your request. The connection runs entirely in your browser, between you and Google. MicPlotter doesn't store your Google sign-in, share your data with anyone, use it for advertising, or use it to train AI models.</p>
+  <p>MicPlotter's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+  <p>You can disconnect MicPlotter at any time from your <a href="https://myaccount.google.com/connections">Google account's third-party connections</a>. Your show files stay in your Drive until you delete them.</p>
+
+  <h2>Other services</h2>
+  <p>The website is hosted by Netlify, which keeps standard server logs, such as IP addresses and the pages requested. Fonts are loaded from Google Fonts. Neither receives your shows.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <span id="contact">admin@micplotter.app</span></p>
+
+  <p><a href="./">Back to MicPlotter</a></p>
+</main>
+</body>
+</html>
