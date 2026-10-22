@@ -1,0 +1,1577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MicPlotter</title>
+<meta name="description" content="Plan wireless microphone assignments and swaps for a theatre show.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;800&family=Atkinson+Hyperlegible+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a stage-manager's binder — header with show name, tab strip, one working panel at a time. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-2: #e8edf1;
+  --fg: #14212b;
+  --muted: #475866;
+  --line: #9aa9b5;
+  --accent: #0a5c66;
+  --accent-fg: #ffffff;
+  --accent-soft: #d3ecee;
+  --on-cell: #0a5c66;
+  --held: #c9d6de;
+  --good: #1b6b34; --good-bg: #dcf1e2;
+  --warn: #7a4a00; --warn-bg: #fdecc8;
+  --bad: #9b1c1c;  --bad-bg: #fbe0e0;
+  --focus: #b3470b;
+  --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171d; --surface: #17222a; --surface-2: #1f2d37; --fg: #eef3f6; --muted: #b0c0cb; --line: #5d7180;
+    --accent: #5fc4cf; --accent-fg: #06262a; --accent-soft: #163c41; --on-cell: #5fc4cf; --held: #34505e;
+    --good: #8fe0a6; --good-bg: #173524; --warn: #ffd27a; --warn-bg: #3b2d0f; --bad: #ffaaaa; --bad-bg: #431b1b;
+    --focus: #ffb27a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171d; --surface: #17222a; --surface-2: #1f2d37; --fg: #eef3f6; --muted: #b0c0cb; --line: #5d7180;
+  --accent: #5fc4cf; --accent-fg: #06262a; --accent-soft: #163c41; --on-cell: #5fc4cf; --held: #34505e;
+  --good: #8fe0a6; --good-bg: #173524; --warn: #ffd27a; --warn-bg: #3b2d0f; --bad: #ffaaaa; --bad-bg: #431b1b;
+  --focus: #ffb27a; color-scheme: dark;
+}
+/* Higher contrast: chosen in Settings or asked for by the operating system */
+:root[data-contrast="more"] { --muted: var(--fg); --line: var(--fg); --surface-2: var(--surface); }
+@media (prefers-contrast: more) { :root { --muted: var(--fg); --line: var(--fg); } }
+
+html { font-size: var(--text-scale, 100%); }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 1.0625rem; line-height: 1.55;
+}
+h1, h2, h3 { line-height: 1.2; text-wrap: balance; margin: 0; }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.15rem; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1280px; margin: 0 auto; }
+
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.skip { position: absolute; left: 8px; top: -100px; background: var(--accent); color: var(--accent-fg); padding: .6rem 1rem; border-radius: var(--radius); z-index: 100; font-weight: 600; }
+.skip:focus { top: 8px; }
+.print-only { display: none; }
+@page plot-wide { size: landscape; margin: 10mm; }
+@page { margin: 12mm; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Header */
+header.top { background: var(--surface); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; padding-block: .9rem; }
+.brand { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.brand h1 { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; }
+.brand .showname { color: var(--muted); font-size: 1rem; }
+.header-status { margin-left: auto; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+
+/* Tabs */
+nav.tabs-wrap { background: var(--surface); border-bottom: 2px solid var(--line); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+[role="tablist"] { display: flex; gap: .25rem; overflow-x: auto; padding-block: .35rem; }
+[role="tab"] {
+  font: inherit; font-weight: 600; background: transparent; color: var(--fg);
+  border: 2px solid transparent; border-radius: var(--radius); padding: .5rem .9rem; min-height: 44px; cursor: pointer; white-space: nowrap;
+}
+[role="tab"]:hover { background: var(--surface-2); }
+[role="tab"][aria-selected="true"] { background: var(--accent); color: var(--accent-fg); }
+[role="tab"] .step { font-family: var(--font-mono); font-weight: 400; opacity: .85; margin-right: .35rem; }
+
+main { padding-block: 1.5rem 4rem; }
+[role="tabpanel"] { display: grid; gap: 1.5rem; grid-template-columns: minmax(0, 1fr); }
+[role="tabpanel"] > *, .cols > * { min-width: 0; }
+[role="tabpanel"]:focus-visible { outline-offset: 6px; }
+.panel-head { display: grid; gap: .4rem; }
+.panel-head p { color: var(--muted); }
+
+section.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem; display: grid; gap: .9rem; min-width: 0; }
+.cols { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
+
+/* Forms */
+label { font-weight: 600; }
+.field { display: grid; gap: .3rem; }
+.field .hint { color: var(--muted); font-size: .92rem; font-weight: 400; }
+input[type="text"], input[type="number"], select {
+  font: inherit; color: var(--fg); background: var(--surface); border: 2px solid var(--line); border-radius: var(--radius);
+  padding: .45rem .6rem; min-height: 44px; width: 100%; min-width: 0;
+}
+input[type="number"] { font-family: var(--font-mono); }
+input[aria-invalid="true"] { border-color: var(--bad); }
+.check { display: flex; gap: .6rem; align-items: center; font-weight: 400; min-height: 44px; }
+.check input { width: 1.4rem; height: 1.4rem; accent-color: var(--accent); flex: none; }
+.row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; }
+.row > .field { flex: 1 1 12rem; }
+button.btn {
+  font: inherit; font-weight: 600; min-height: 44px; padding: .45rem 1rem; border-radius: var(--radius); cursor: pointer;
+  border: 2px solid var(--accent); background: var(--accent); color: var(--accent-fg);
+}
+button.btn.secondary { background: transparent; color: var(--accent); }
+button.btn.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+button.icon { font: inherit; min-width: 44px; min-height: 44px; border-radius: var(--radius); border: 2px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+button.icon:hover { border-color: var(--accent); }
+button.icon.del { color: var(--bad); }
+.btns { display: flex; flex-wrap: wrap; gap: .5rem; }
+.error { color: var(--bad); font-weight: 600; }
+
+/* Tables */
+.table-scroll { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+caption { text-align: left; padding: .6rem .75rem; font-weight: 600; color: var(--muted); }
+th, td { border-bottom: 1px solid var(--line); padding: .35rem .5rem; text-align: left; vertical-align: middle; }
+thead th { background: var(--surface-2); font-size: .95rem; }
+.edit-table td { padding: .3rem .4rem; }
+.edit-table td.narrow { width: 1%; white-space: nowrap; }
+.edit-table input[type="number"] { width: 6.5rem; }
+
+/* Scene grid */
+.grid-table { width: max-content; min-width: 100%; }
+.grid-table th[scope="row"] { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 11rem; border-right: 2px solid var(--line); }
+.grid-table th[scope="row"] .actor { display: block; color: var(--muted); font-weight: 400; font-size: .9rem; }
+.grid-table thead th { text-align: center; vertical-align: bottom; min-width: 3.2rem; }
+.grid-table thead th .code { font-family: var(--font-mono); display: block; }
+.grid-table thead th .sname { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); max-width: 7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-inline: auto; }
+.grid-table td { text-align: center; padding: 0; border-left: 1px solid var(--surface-2); }
+.grid-table tfoot td, .grid-table tfoot th { font-family: var(--font-mono); background: var(--surface-2); padding: .35rem; }
+.cellbox { appearance: none; -webkit-appearance: none; margin: 4px; width: 36px; height: 36px; border: 2px solid var(--line); border-radius: 4px; background: var(--surface); cursor: pointer; display: inline-grid; place-content: center; vertical-align: middle; }
+.cellbox::after { content: ""; width: 14px; height: 8px; border-left: 4px solid var(--accent-fg); border-bottom: 4px solid var(--accent-fg); transform: rotate(-45deg) translate(1px,-2px); opacity: 0; }
+.cellbox:checked { background: var(--on-cell); border-color: var(--on-cell); }
+.cellbox:checked::after { opacity: 1; }
+.cellbox:hover { border-color: var(--accent); }
+.grid-table tr:hover th[scope="row"], .grid-table tr:focus-within th[scope="row"] { background: var(--accent-soft); }
+.legend { display: flex; flex-wrap: wrap; gap: 1rem; color: var(--muted); font-size: .95rem; align-items: center; }
+.swatch { display: inline-block; width: 1.1rem; height: 1.1rem; border-radius: 3px; vertical-align: -3px; margin-right: .35rem; border: 2px solid var(--line); }
+
+/* Plot */
+.summary { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; display: grid; gap: .2rem; }
+.stat .label { color: var(--muted); font-size: .9rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.stat .value { font-family: var(--font-mono); font-size: 1.9rem; font-weight: 600; line-height: 1.1; }
+.pill { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; font-size: .9rem; padding: .15rem .6rem; border-radius: 999px; border: 2px solid currentColor; width: fit-content; }
+.pill.good { color: var(--good); background: var(--good-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+ul.issues { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+ul.issues li { padding: .6rem .8rem; border-radius: var(--radius); border-left: 6px solid currentColor; }
+ul.issues li.bad { color: var(--bad); background: var(--bad-bg); }
+ul.issues li.warn { color: var(--warn); background: var(--warn-bg); }
+ul.issues li.good { color: var(--good); background: var(--good-bg); }
+ul.issues li span { color: var(--fg); }
+.mark-on, .mark-off { color: var(--focus); font-size: .8em; }
+.mark-on { margin-right: .2rem; } .mark-off { margin-left: .2rem; }
+.held-swatch { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 3px, var(--held) 3px, var(--held) 5px); }
+.wall td.nomic { color: var(--bad); background: var(--bad-bg); font-weight: 600; }
+.wall td.on-nomic { color: var(--muted); }
+ol.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; counter-reset: rule; }
+ol.rules li { display: grid; grid-template-columns: 1fr auto; gap: 0 .5rem; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); padding: .35rem .6rem; background: var(--surface); }
+ol.rules li .hint { grid-column: 1; font-size: .9rem; }
+ol.rules li .btns { grid-column: 2; grid-row: 1 / span 2; flex-wrap: nowrap; }
+details > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: .5rem; }
+.legend .mark-on, .legend .mark-off { margin: 0 .2rem 0 0; }
+.wall td, .wall th { text-align: center; font-size: .9rem; white-space: nowrap; }
+.wall th[scope="row"] { position: sticky; left: 0; background: var(--surface-2); font-family: var(--font-mono); z-index: 1; }
+.wall thead th { font-family: var(--font-mono); }
+.wall td.on { background: var(--accent-soft); font-weight: 600; }
+.wall td.held { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 5px, var(--held) 5px, var(--held) 7px); color: var(--muted); font-style: italic; }
+.wall td.swap { box-shadow: inset 4px 0 0 var(--focus); }
+.runorder { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.runorder > li { border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem 1rem; background: var(--surface); display: grid; gap: .4rem; }
+.runorder ul { margin: 0; padding-left: 1.2rem; display: grid; gap: .2rem; }
+.mono { font-family: var(--font-mono); }
+.tag { font-family: var(--font-mono); font-weight: 600; }
+
+/* Paperwork */
+.slips { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); }
+.slip { border: 2px dashed var(--line); border-radius: var(--radius); padding: .9rem; background: var(--surface); display: grid; gap: .4rem; break-inside: avoid; }
+.slip h3 { font-size: 1.1rem; }
+.slip ol { margin: 0; padding-left: 1.2rem; }
+.label-big { font-family: var(--font-mono); font-size: 2.4rem; font-weight: 600; line-height: 1; }
+
+/* Status bar */
+.statusbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; pointer-events: none; display: flex; justify-content: center; padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.toast { pointer-events: auto; background: var(--fg); color: var(--bg); border-radius: var(--radius); padding: .6rem .9rem; display: flex; gap: .8rem; align-items: center; max-width: 40rem; box-shadow: 0 6px 20px rgb(0 0 0 / .25); }
+.toast button { font: inherit; font-weight: 600; background: var(--bg); color: var(--fg); border: 0; border-radius: 4px; padding: .3rem .7rem; min-height: 36px; cursor: pointer; }
+kbd { font-family: var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; font-size: .9em; }
+dl.keys { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; margin: 0; }
+dl.keys dd { margin: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="reduce"]) button, :root:not([data-motion="reduce"]) .cellbox { transition: background-color .12s, border-color .12s; }
+}
+@media (forced-colors: active) {
+  .cellbox:checked { background: Highlight; }
+  [role="tab"][aria-selected="true"] { border-color: Highlight; }
+}
+@media print {
+  .print-only { display: block !important; }
+  .print-head { font-size: 11pt; margin-bottom: 6pt; border-bottom: 1pt solid #000; padding-bottom: 4pt; }
+  #panel-plot[data-print-mode="wall"] [data-print]:not([data-print~="wall"]),
+  #panel-plot[data-print-mode="run"] [data-print]:not([data-print~="run"]) { display: none !important; }
+  #panel-plot .panel-head h2, #panel-plot .panel-head > p { display: none; }
+  #panel-plot { page: plot-wide; display: block; }
+  #panel-plot > * { margin-bottom: 8pt; }
+  .wall { font-size: 7.5pt; width: 100%; }
+  .wall th, .wall td { padding: 2pt 3pt; border: 0.5pt solid #999; white-space: nowrap; }
+  .wall thead { display: table-header-group; }
+  .wall tr { break-inside: avoid; }
+  .wall td.on, .wall td.held, .wall td.swap, .wall td.nomic, .mark-on, .mark-off { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .wall td.held { background: #e6e6e6 !important; color: #333 !important; font-style: italic; }
+  .wall td.on { background: #fff !important; font-weight: 700; }
+  .wall td.swap { box-shadow: inset 3pt 0 0 #000 !important; }
+  .mark-on, .mark-off { color: #000 !important; }
+  .legend .held-swatch { background: #e6e6e6 !important; }
+  .legend .swatch { -webkit-print-color-adjust: exact; print-color-adjust: exact; border-color: #999 !important; }
+  .legend .swatch[style*="box-shadow"] { box-shadow: inset 3pt 0 0 #000 !important; }
+  .legend .swatch[style*="accent-soft"] { background: #fff !important; }
+  .runorder { display: block; columns: 2; column-gap: 18pt; }
+  .runorder > li { display: block; break-inside: avoid; margin: 0 0 6pt; padding: 4pt 6pt; font-size: 9pt; }
+  .runorder ul { display: block; padding-left: 12pt; }
+  ul.issues li { break-inside: avoid; }
+  section.card { padding: 6pt; border: 0; }
+  .summary { grid-template-columns: repeat(4, 1fr); }
+  .stat { padding: 3pt 6pt; gap: 0; }
+  .stat .label { font-size: 7pt; } .stat .value { font-size: 12pt; } .stat .hint, .stat .pill { font-size: 8pt; }
+  #panel-plot h3 { font-size: 11pt; }
+  #panel-plot .legend { font-size: 8pt; gap: 8pt; }
+  ul.issues li { padding: 3pt 6pt; font-size: 9pt; }
+  header.top, nav.tabs-wrap, .no-print, .statusbar, .skip { display: none !important; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  main { padding: 0; }
+  section.card, .stat, .runorder > li { border-color: #000; }
+  .slip { border-color: #000; }
+  .table-scroll { overflow: visible; border: 0; }
+  .wall td.on { background: #e5e5e5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1>MicPlotter</h1>
+      <span class="showname" id="headerShow"></span>
+    </div>
+    <div class="header-status" id="headerStatus" aria-live="off"></div>
+  </div>
+</header>
+
+<nav class="tabs-wrap" aria-label="Sections">
+  <div class="wrap">
+    <div role="tablist" aria-label="MicPlotter sections" id="tablist">
+      <button role="tab" id="tab-show" aria-controls="panel-show" aria-selected="false" tabindex="-1"><span class="step" aria-hidden="true">1</span>Show</button>
+      <button role="tab" id="tab-cast" aria-controls="panel-cast" aria-selected="false" tabindex="-1"><span class="step" aria-hidden="true">2</span>Cast</button>
+      <button role="tab" id="tab-scenes" aria-controls="panel-scenes" aria-selected="false" tabindex="-1"><span class="step" aria-hidden="true">3</span>Scenes</button>
+      <button role="tab" id="tab-grid" aria-controls="panel-grid" aria-selected="false" tabindex="-1"><span class="step" aria-hidden="true">4</span>Who's on</button>
+      <button role="tab" id="tab-plot" aria-controls="panel-plot" aria-selected="false" tabindex="-1"><span class="step" aria-hidden="true">5</span>Mic plot</button>
+      <button role="tab" id="tab-paper" aria-controls="panel-paper" aria-selected="false" tabindex="-1"><span class="step" aria-hidden="true">6</span>Paperwork</button>
+      <button role="tab" id="tab-help" aria-controls="panel-help" aria-selected="false" tabindex="-1">Help</button>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="wrap" tabindex="-1">
+  <div role="tabpanel" id="panel-show" aria-labelledby="tab-show" tabindex="0" hidden></div>
+  <div role="tabpanel" id="panel-cast" aria-labelledby="tab-cast" tabindex="0" hidden></div>
+  <div role="tabpanel" id="panel-scenes" aria-labelledby="tab-scenes" tabindex="0" hidden></div>
+  <div role="tabpanel" id="panel-grid" aria-labelledby="tab-grid" tabindex="0" hidden></div>
+  <div role="tabpanel" id="panel-plot" aria-labelledby="tab-plot" tabindex="0" hidden></div>
+  <div role="tabpanel" id="panel-paper" aria-labelledby="tab-paper" tabindex="0" hidden></div>
+  <div role="tabpanel" id="panel-help" aria-labelledby="tab-help" tabindex="0" hidden></div>
+</main>
+
+<div class="statusbar" id="statusbar"></div>
+<div class="sr-only" role="status" aria-live="polite" id="announcer"></div>
+
+<script>
+"use strict";
+/* ---------- Helpers ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const STORE_KEY = "micplotter:show";
+const OLD_STORE_KEY = "micplot-web:show";
+const PREFS_KEY = "micplotter:prefs";
+
+/* ---------- Example show (Gilbert & Sullivan, public domain; cast names are made up) ---------- */
+function exampleShow() {
+  const A = (name, extra = {}) => ({ id: uid(), name, preferredMic: "", keepMic: false, ...extra });
+  const actors = {
+    frederic: A("Daniel Okafor", { keepMic: true, preferredMic: 1 }),
+    king: A("Marcus Lee", { preferredMic: 2 }),
+    mabel: A("Sofia Marín", { keepMic: true, preferredMic: 3 }),
+    ruth: A("Joan Whitfield"),
+    stanley: A("Arthur Penn"),
+    sergeant: A("Leo Brandt"),
+    samuel: A("Tomás Reyes"),
+    edith: A("Priya Shah"),
+    kate: A("Hannah Cole"),
+    isabel: A("Mei Tanaka"),
+  };
+  const scenes = [
+    ["1.1", "Pour, O pour the pirate sherry"], ["1.2", "When Frederic was a little lad"], ["1.3", "Oh, better far to live and die"],
+    ["1.4", "Oh, false one, you have deceived me"], ["1.5", "Climbing over rocky mountain"], ["1.6", "Poor wand'ring one"],
+    ["1.7", "I am the very model"], ["1.8", "Act 1 finale"], ["2.1", "Oh, dry the glist'ning tear"],
+    ["2.2", "When the foeman bares his steel"], ["2.3", "When you had left our pirate fold"], ["2.4", "Ah, leave me not to pine"],
+    ["2.5", "When a felon's not engaged"], ["2.6", "With cat-like tread"], ["2.7", "Act 2 finale"],
+  ].map(([code, name]) => ({ id: uid(), code, name }));
+  const sc = codes => codes.map(c => scenes.find(s => s.code === c).id);
+  const C = (name, actor, codes, understudy) => ({ id: uid(), name, actorId: actors[actor].id, understudyId: understudy ? actors[understudy].id : "", scenes: sc(codes) });
+  const characters = [
+    C("Frederic", "frederic", ["1.1","1.2","1.3","1.4","1.6","1.8","2.3","2.4","2.6","2.7"], "samuel"),
+    C("Pirate King", "king", ["1.1","1.2","1.3","1.7","1.8","2.3","2.6","2.7"]),
+    C("Mabel", "mabel", ["1.6","1.7","1.8","2.1","2.2","2.4","2.7"], "edith"),
+    C("Ruth", "ruth", ["1.1","1.2","1.4","1.8","2.3","2.6","2.7"]),
+    C("Major-General Stanley", "stanley", ["1.7","1.8","2.1","2.6","2.7"]),
+    C("Sergeant of Police", "sergeant", ["2.2","2.5","2.6","2.7"]),
+    C("Samuel", "samuel", ["1.1","1.3","1.7","1.8","2.6","2.7"]),
+    C("Edith", "edith", ["1.5","1.6","1.7","1.8","2.1","2.2","2.7"]),
+    C("Kate", "kate", ["1.5","1.6","1.7","1.8","2.1","2.7"]),
+    C("Isabel", "isabel", ["1.5","1.7","1.8"]),
+  ];
+  return {
+    version: 1, example: true,
+    title: "The Pirates of Penzance (example)",
+    settings: { mics: 9, swapGap: 1 },
+    actors: Object.values(actors), characters, scenes,
+  };
+}
+function emptyShow() {
+  return normaliseShow({ version: 1, title: "Untitled show", settings: { mics: 16, swapGap: 1 }, actors: [], characters: [], scenes: [] });
+}
+
+/* ---------- The mic plot engine ----------
+   Like the desktop MicPlot, the plot is chosen by rules you put in order:
+   1. Work out when each actor needs a mic ("spans"), using their "When miked" setting.
+   2. Build many candidate plots. Each one hands spans to mics in a slightly
+      different way (more candidates = a more thorough search).
+   3. Score every candidate on each rule and keep the best one, comparing the
+      rules in your order: a later rule only breaks ties left by earlier ones. */
+const RULES = [
+  { id: 1, key: "mics", label: "Minimise number of transmitters", hint: "Use as few mics as possible." },
+  { id: 2, key: "swaps", label: "Minimise total number of swaps", hint: "Pass mics between actors as rarely as possible." },
+  { id: 3, key: "fast", label: "Minimise number of fast swaps", hint: "Avoid swaps with less time than the fast swap setting." },
+  { id: 4, key: "nonIntermission", label: "Minimise number of non-intermission swaps", hint: "Do swaps during the intermission where possible." },
+  { id: 5, key: "peak", label: "Minimise peak simultaneous swaps", hint: "Spread swaps out so the crew isn't swamped at one change." },
+  { id: 6, key: "refits", label: "Minimise number of refits", hint: "Avoid taking an actor's mic off and putting one back on later." },
+  { id: 7, key: "keepers", label: "Maximise cast who don't swap", hint: "Let as many actors as possible keep one mic all show." },
+  { id: 8, key: "spare", label: "Minimise “spare” transmitter unavailability", hint: "Keep a free mic in as many scenes as possible." },
+  { id: 14, key: "unmiked", label: "Minimise unmiked pages", hint: "When mics run short, leave as few actors unmiked as possible. Higher-priority actors are miked first." },
+];
+const DEFAULT_RULES = [14, 1, 2, 3, 4, 5, 6, 7, 8].map(id => ({ id, on: [14, 1, 2, 3, 4, 5].includes(id) }));
+const EFFORT = { rough: 1, quick: 30, medium: 150, thorough: 600 };
+const WHEN_MIKED = [
+  ["normal", "Normal (when on stage)"], ["never", "Never"], ["always", "Always (whole show)"],
+  ["first-last", "First to last entrance"], ["start-last", "Start of show to last entrance"], ["first-end", "First entrance to end of show"],
+];
+function normaliseSettings(s) {
+  s.mics = Math.max(0, parseInt(s.mics, 10) || 0);
+  s.swapGap = Math.max(0, parseInt(s.swapGap, 10) || 0);
+  s.fastGap = Math.max(0, parseInt(s.fastGap ?? 2, 10) || 0);
+  if (!["auto", "fixed"].includes(s.txMode)) s.txMode = "auto";
+  if (!EFFORT[s.effort]) s.effort = "medium";
+  s.onePerCast = !!s.onePerCast;
+  const known = new Map((Array.isArray(s.rules) ? s.rules : DEFAULT_RULES).filter(r => RULES.some(x => x.id === r.id)).map(r => [r.id, !!r.on]));
+  s.rules = [...known].map(([id, on]) => ({ id, on }));
+  for (const r of DEFAULT_RULES) if (!known.has(r.id)) s.rules.push({ ...r, on: false });
+  return s;
+}
+function normaliseShow(s) {
+  s.settings = normaliseSettings(s.settings || {});
+  s.actors.forEach(a => {
+    if (!WHEN_MIKED.some(([k]) => k === a.whenMiked)) a.whenMiked = a.keepMic ? "first-last" : "normal";
+    delete a.keepMic;
+    a.priority = Math.min(5, Math.max(1, parseInt(a.priority, 10) || 3));
+  });
+  s.scenes.forEach(x => { x.intermission = !!(x.intermission ?? x.interval); delete x.interval; });
+  return s;
+}
+// Small seeded random generator, so the same show always gives the same plot
+function rng32(seed) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+function prepareShow(show) {
+  const set = show.settings;
+  const S = show.scenes.length;
+  const sceneIdx = new Map(show.scenes.map((s, i) => [s.id, i]));
+  const actorById = new Map(show.actors.map(a => [a.id, a]));
+  const on = new Map(show.actors.map(a => [a.id, new Array(S).fill(false)]));
+  const charsIn = new Map(show.actors.map(a => [a.id, new Array(S).fill(null).map(() => [])]));
+  for (const c of show.characters) {
+    if (!on.has(c.actorId)) continue;
+    for (const sid of c.scenes) {
+      const i = sceneIdx.get(sid);
+      if (i == null) continue;
+      on.get(c.actorId)[i] = true;
+      charsIn.get(c.actorId)[i].push(c);
+    }
+  }
+  const runsOf = new Map();
+  for (const a of show.actors) {
+    const o = on.get(a.id), runs = [];
+    for (let i = 0; i < S; i++) if (o[i]) {
+      const last = runs[runs.length - 1];
+      if (last && last.end === i - 1) last.end = i; else runs.push({ start: i, end: i });
+    }
+    runsOf.set(a.id, runs);
+  }
+  return { S, set, gap: set.swapGap, avail: set.mics, sceneIdx, actorById, on, charsIn, runsOf, intermissions: show.scenes.map(s => !!s.intermission) };
+}
+// The spans an actor needs a mic for. keepAll = hold one mic through every gap.
+function spansFor(base, a, keepAll) {
+  const runs = base.runsOf.get(a.id), S = base.S, gap = base.gap;
+  const mode = base.set.onePerCast && a.whenMiked === "normal" ? "first-last" : a.whenMiked;
+  if (mode === "never") return [];
+  if (mode === "always") return S ? [{ start: 0, end: S - 1 }] : [];
+  if (!runs.length) return [];
+  const first = runs[0].start, last = runs[runs.length - 1].end;
+  if (mode === "first-last") return [{ start: first, end: last }];
+  if (mode === "start-last") return [{ start: 0, end: last }];
+  if (mode === "first-end") return [{ start: first, end: S - 1 }];
+  if (keepAll) return [{ start: first, end: last }];
+  const merged = [];
+  for (const r of runs) {
+    const prev = merged[merged.length - 1];
+    if (prev && r.start - prev.end - 1 < 2 * gap + 1) prev.end = r.end; else merged.push({ ...r });
+  }
+  return merged;
+}
+
+// One candidate plot. opt: { roomy, keepProb, order: "start"|"priority", rnd }
+function buildPlan(base, opt) {
+  const { gap, avail, actorById, set } = base;
+  const fixed = set.txMode === "fixed";
+  const cap = fixed ? avail : Infinity;
+  const rnd = opt.rnd || (() => 0);
+  const spans = [];
+  for (const a of actorById.values()) {
+    const keepAll = opt.keepProb >= 1 || (opt.keepProb > 0 && rnd() < opt.keepProb);
+    const list = spansFor(base, a, keepAll);
+    list.forEach((r, k) => spans.push({ actorId: a.id, start: r.start, end: r.end, nextStart: list[k + 1]?.start ?? null, tie: rnd() }));
+  }
+  const pri = sp => actorById.get(sp.actorId).priority || 3;
+  const pref = sp => (parseInt(actorById.get(sp.actorId).preferredMic, 10) > 0 ? 1 : 0);
+  spans.sort(opt.order === "priority"
+    ? (x, y) => pri(x) - pri(y) || x.start - y.start || pref(y) - pref(x) || x.tie - y.tie
+    : (x, y) => x.start - y.start || pref(y) - pref(x) || pri(x) - pri(y) || (y.end - y.start) - (x.end - x.start) || x.tie - y.tie);
+
+  const reservedBy = new Map();
+  for (const a of actorById.values()) { const p = parseInt(a.preferredMic, 10); if (p > 0 && !reservedBy.has(p)) reservedBy.set(p, a.id); }
+  const mics = new Map(); // number -> spans on it
+  const fits = (list, sp) => list.every(s => s.actorId === sp.actorId
+    ? (s.end < sp.start || sp.end < s.start)
+    : (set.onePerCast ? false : (s.end + gap < sp.start || sp.end + gap < s.start)));
+  const lastOwnMic = new Map();
+  const unmiked = [];
+  for (const sp of spans) {
+    const a = actorById.get(sp.actorId);
+    const prefNum = parseInt(a.preferredMic, 10) || 0;
+    let best = null, bestScore = -Infinity;
+    for (const [num, list] of mics) {
+      if (!fits(list, sp)) continue;
+      let score = 0;
+      const before = list.filter(s => s.end < sp.start).sort((x, y) => y.end - x.end)[0];
+      const after = list.filter(s => s.start > sp.end).sort((x, y) => x.start - y.start)[0];
+      if (before?.actorId === sp.actorId) score += 1000;          // carries straight on: no swap
+      else if (lastOwnMic.get(a.id) === num) score += 200;          // back on their own mic
+      if (num === prefNum) score += 400;
+      if (reservedBy.has(num) && reservedBy.get(num) !== a.id) score -= 300;
+      const returning = before && before.nextStart != null && before.actorId !== sp.actorId;
+      if (opt.roomy && returning) score -= 250;                     // don't take a mic its wearer comes back for
+      if (after && after.actorId !== sp.actorId) score -= 50;
+      score += rnd() * 120 - num * 0.01;
+      if (score > bestScore) { bestScore = score; best = num; }
+    }
+    const canOpen = mics.size < cap;
+    const wantNew = canOpen && (best == null || (opt.roomy && mics.size < avail && bestScore < 500));
+    if (wantNew) {
+      const free = n => !mics.has(n);
+      let n = 0;
+      if (prefNum > 0 && free(prefNum) && (!fixed || prefNum <= avail)) n = prefNum;
+      else {
+        const limit = fixed ? avail : Math.max(avail, 1);
+        for (let k = 1; k <= limit && !n; k++) if (free(k) && !(reservedBy.has(k) && reservedBy.get(k) !== a.id)) n = k;
+        for (let k = 1; k <= limit && !n; k++) if (free(k)) n = k;
+        if (!n && !fixed) { n = limit + 1; while (!free(n)) n++; }
+      }
+      if (n) { best = n; mics.set(n, []); }
+    }
+    if (best == null) { unmiked.push(sp); continue; }
+    sp.mic = best;
+    mics.get(best).push(sp);
+    lastOwnMic.set(a.id, best);
+  }
+  return { spans: spans.filter(s => s.mic != null), unmiked, mics };
+}
+
+function linkPlan(plan) {
+  const byMic = new Map();
+  for (const sp of plan.spans) { if (!byMic.has(sp.mic)) byMic.set(sp.mic, []); byMic.get(sp.mic).push(sp); }
+  for (const list of byMic.values()) { list.sort((x, y) => x.start - y.start); list.forEach((sp, i) => { sp.prevOnMic = list[i - 1] || null; sp.nextOnMic = list[i + 1] || null; }); }
+  const byActor = new Map();
+  for (const sp of plan.spans) { if (!byActor.has(sp.actorId)) byActor.set(sp.actorId, []); byActor.get(sp.actorId).push(sp); }
+  for (const list of byActor.values()) { list.sort((x, y) => x.start - y.start); list.forEach((sp, i) => { sp.prevOwn = list[i - 1] || null; sp.nextOwn = list[i + 1] || null; }); }
+  for (const sp of plan.spans) sp.kept = !!(sp.prevOnMic && sp.prevOnMic.actorId === sp.actorId);
+  plan.byMic = byMic; plan.byActor = byActor;
+  return plan;
+}
+
+function scorePlan(base, plan) {
+  const { S, set, avail, on, intermissions } = base;
+  const handoffs = plan.spans.filter(sp => sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId);
+  const freeScenes = sp => sp.start - sp.prevOnMic.end - 1;
+  const crossesIntermission = sp => { for (let i = sp.prevOnMic.end + 1; i < sp.start; i++) if (intermissions[i]) return true; return false; };
+  const atBreak = new Map();
+  handoffs.forEach(sp => atBreak.set(sp.start, (atBreak.get(sp.start) || 0) + 1));
+  const refits = plan.spans.filter(sp => sp.prevOwn && !sp.kept).length;
+  // Actors who keep one mic all show: never hand it on, never take one over, never refitted
+  const inSwap = new Set(handoffs.flatMap(sp => [sp.actorId, sp.prevOnMic.actorId]));
+  let keepers = 0;
+  for (const [id, list] of plan.byActor) if (list.length && !inSwap.has(id) && list.every(sp => sp === list[0] || sp.kept) && !plan.unmiked.some(u => u.actorId === id)) keepers++;
+  const inUse = new Array(S).fill(0);
+  plan.spans.forEach(sp => { for (let i = sp.start; i <= sp.end; i++) inUse[i]++; });
+  const pool = set.txMode === "fixed" ? avail : Math.max(avail, plan.mics.size);
+  let unmiked = 0;
+  plan.unmiked.forEach(sp => { for (let i = sp.start; i <= sp.end; i++) if (on.get(sp.actorId)[i]) unmiked++; });
+  return {
+    mics: plan.mics.size,
+    swaps: handoffs.length,
+    fast: handoffs.filter(sp => freeScenes(sp) < set.fastGap && !crossesIntermission(sp)).length,
+    nonIntermission: handoffs.filter(sp => !crossesIntermission(sp)).length,
+    peak: Math.max(0, ...atBreak.values()),
+    refits,
+    keepers: -keepers,            // stored negative so that "smaller is better" for every rule
+    spare: inUse.filter(n => n >= pool).length,
+    unmiked,
+    keepersCount: keepers,
+  };
+}
+function comparePlans(a, b, rules) {
+  for (const r of rules) {
+    if (!r.on) continue;
+    const key = RULES.find(x => x.id === r.id).key;
+    if (a[key] !== b[key]) return a[key] - b[key];
+  }
+  return a.unmiked - b.unmiked || a.mics - b.mics || a.swaps - b.swaps || a.refits - b.refits;
+}
+
+function computePlot(show, opts = {}) {
+  normaliseSettings(show.settings);
+  const base = prepareShow(show);
+  const effort = opts.effort || show.settings.effort;
+  const tries = EFFORT[effort] || 1;
+  const candidates = [
+    { roomy: false, keepProb: 0, order: "start" },
+    { roomy: true, keepProb: 0, order: "start" },
+    { roomy: true, keepProb: 1, order: "start" },
+    { roomy: false, keepProb: 0, order: "priority" },
+  ].slice(0, tries === 1 ? 2 : 4);
+  const rnd = rng32(show.scenes.length * 7919 + show.actors.length * 104729 + 17);
+  for (let i = candidates.length; i < tries; i++) {
+    candidates.push({ roomy: rnd() < 0.6, keepProb: [0, 0, 0.2, 0.5, 0.8][Math.floor(rnd() * 5)], order: rnd() < 0.7 ? "start" : "priority", rnd: rng32(Math.floor(rnd() * 2 ** 31)) });
+  }
+  let best = null, bestScore = null, minMics = Infinity;
+  for (const c of candidates) {
+    const plan = linkPlan(buildPlan(base, c));
+    const score = scorePlan(base, plan);
+    if (!plan.unmiked.length) minMics = Math.min(minMics, score.mics);
+    if (!best || comparePlans(score, bestScore, show.settings.rules) < 0) { best = plan; bestScore = score; }
+  }
+  return finishPlot(show, base, best, bestScore, { minMics: minMics === Infinity ? bestScore.mics : minMics, tried: candidates.length });
+}
+
+function finishPlot(show, base, plan, score, extra) {
+  const S = base.S;
+  // Unless a mic is needed for a swap, it goes on at the preset and comes off after the show.
+  for (const list of plan.byMic.values()) {
+    const first = list[0], last = list[list.length - 1];
+    // An actor moving from another mic gets this one at the same change; everyone else at the preset.
+    first.start = first.prevOwn ? Math.min(first.start, first.prevOwn.end + 1) : 0;
+    if (!last.nextOwn) last.end = S - 1;
+    // The same actor on a mic twice in a row simply keeps wearing it in between
+    for (let i = 1; i < list.length; i++) if (list[i - 1].actorId === list[i].actorId) list[i - 1].end = list[i].start - 1;
+  }
+  const micNums = [...plan.byMic.keys()].sort((x, y) => x - y);
+  const grid = new Map(micNums.map(m => [m, new Array(S).fill(null)]));
+  for (const sp of plan.spans) for (let i = sp.start; i <= sp.end; i++) grid.get(sp.mic)[i] = { span: sp, onStage: base.on.get(sp.actorId)[i] };
+  // Running order: point k is "just before scene k"; point 0 is the preset, point S is after the show.
+  const points = Array.from({ length: S + 1 }, () => ({ collect: [], fit: [] }));
+  for (const sp of plan.spans) {
+    const continues = sp.nextOnMic && sp.nextOnMic.actorId === sp.actorId;
+    if (!continues) points[sp.end + 1].collect.push(sp);
+    if (!sp.kept) points[sp.start].fit.push(sp);
+  }
+  const handoffs = plan.spans.filter(sp => sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId);
+  const peak = Array.from({ length: S }, (_, i) => show.actors.filter(a => base.on.get(a.id)[i]).length);
+  return {
+    S, gap: base.gap, avail: base.avail, txMode: base.set.txMode, spans: plan.spans, unmiked: plan.unmiked,
+    micNums, micCount: micNums.length, maxMic: micNums.length ? micNums[micNums.length - 1] : 0,
+    grid, points, handoffs, peak, on: base.on, charsIn: base.charsIn, actorById: base.actorById,
+    score, minMics: extra.minMics, tried: extra.tried,
+  };
+}
+
+function checkShow(show, plot) {
+  const issues = [];
+  const sceneLabel = i => { const s = show.scenes[i]; return s ? (s.code || `Scene ${i + 1}`) : "?"; };
+  if (!show.scenes.length) issues.push({ level: "warn", text: "Add scenes on the Scenes tab to start." });
+  if (!show.actors.length) issues.push({ level: "warn", text: "Add actors on the Cast tab to start." });
+  if (plot.txMode === "auto" && plot.micCount > plot.avail) issues.push({ level: "bad", text: `This plot needs ${plot.micCount} mics but only ${plot.avail} are available.`, more: "Raise the number of mics, shorten the swap time, or switch to “Use exactly the mics available” so the lowest-priority actors go without." });
+  const byActor = new Map();
+  plot.unmiked.forEach(sp => { if (!byActor.has(sp.actorId)) byActor.set(sp.actorId, []); byActor.get(sp.actorId).push(sp); });
+  for (const [id, list] of byActor) {
+    const scenes = list.map(sp => sp.start === sp.end ? sceneLabel(sp.start) : `${sceneLabel(sp.start)}–${sceneLabel(sp.end)}`).join(", ");
+    issues.push({ level: "bad", text: `${plot.actorById.get(id)?.name} has no mic in ${scenes}.`, more: "There aren't enough mics. Add mics, or raise this actor's priority on the Cast tab." });
+  }
+  if (plot.maxMic > plot.avail && plot.micCount <= plot.avail) issues.push({ level: "warn", text: `Mic number ${plot.maxMic} is above your ${plot.avail} available mics.`, more: "Check the priority mic numbers on the Cast tab." });
+  for (const c of show.characters) {
+    if (!c.actorId || !plot.actorById.has(c.actorId)) issues.push({ level: "warn", text: `${c.name || "A character"} has no actor yet, so they get no mic.` });
+    else if (!c.scenes.length) issues.push({ level: "warn", text: `${c.name} isn't in any scene yet.`, more: "Tick their scenes on the Who's on tab." });
+  }
+  for (const a of show.actors) {
+    const p = parseInt(a.preferredMic, 10);
+    if (p > 0 && plot.spans.some(s => s.actorId === a.id && s.mic !== p)) issues.push({ level: "warn", text: `${a.name} couldn't always get priority mic ${p}.`, more: "Another actor with the same priority mic, or a mic shortage, got in the way." });
+  }
+  for (const a of show.actors) {
+    plot.charsIn.get(a.id).forEach((list, i) => { if (list.length > 1) issues.push({ level: "warn", text: `${a.name} plays ${list.map(c => c.name).join(" and ")} in ${sceneLabel(i)}.`, more: "Check that this doubling is intended." }); });
+  }
+  return issues;
+}
+
+function checkUnderstudies(show, base) {
+  const results = [];
+  for (const c of show.characters) {
+    if (!c.understudyId || !show.actors.some(a => a.id === c.understudyId)) continue;
+    const u = show.actors.find(a => a.id === c.understudyId);
+    const trial = JSON.parse(JSON.stringify(show));
+    trial.characters.find(x => x.id === c.id).actorId = c.understudyId;
+    const clash = [];
+    const ownChars = show.characters.filter(x => x.actorId === c.understudyId && x.id !== c.id);
+    for (const sid of c.scenes) {
+      const other = ownChars.filter(x => x.scenes.includes(sid));
+      if (other.length) clash.push({ scene: show.scenes.find(s => s.id === sid), other });
+    }
+    const p = computePlot(trial, { effort: "rough" });
+    const short = p.unmiked.length > 0 || (p.txMode === "auto" && p.micCount > base.avail);
+    results.push({ character: c, understudy: u, clash, micCount: p.micCount, short, ok: !clash.length && !short });
+  }
+  return results;
+}
+
+/* ---------- State, saving, undo ---------- */
+let show = load();
+let plot = computePlot(show);
+let undoStack = [];
+let saveTimer = null;
+
+function load() {
+  const raw = store.get(STORE_KEY) || store.get(OLD_STORE_KEY);
+  if (raw) { try { const s = JSON.parse(raw); if (validShow(s)) return normaliseShow(s); } catch {} }
+  return normaliseShow(exampleShow());
+}
+function validShow(s) { return s && Array.isArray(s.actors) && Array.isArray(s.characters) && Array.isArray(s.scenes) && s.settings; }
+function snapshot() { undoStack.push(JSON.stringify(show)); if (undoStack.length > 100) undoStack.shift(); }
+function changed({ rerender = [], quiet = false } = {}) {
+  plot = computePlot(show);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => store.set(STORE_KEY, JSON.stringify(show)), 250);
+  renderHeader();
+  rerender.forEach(p => renderers[p]?.());
+}
+function mutate(fn, opts = {}) { snapshot(); fn(); changed(opts); }
+function undo() {
+  const prev = undoStack.pop();
+  if (!prev) { announce("Nothing to undo."); return; }
+  show = JSON.parse(prev);
+  changed();
+  renderActive();
+  toast("Undone.");
+}
+
+/* ---------- Announcements & toasts ---------- */
+function announce(msg) { const el = $("#announcer"); el.textContent = ""; setTimeout(() => { el.textContent = msg; }, 30); }
+let toastTimer;
+function toast(msg, withUndo = false) {
+  announce(msg + (withUndo ? " Press Control Z or the Undo button to undo." : ""));
+  const bar = $("#statusbar");
+  bar.innerHTML = `<div class="toast"><span>${esc(msg)}</span>${withUndo ? '<button type="button" id="toastUndo">Undo</button>' : ""}</div>`;
+  if (withUndo) $("#toastUndo").addEventListener("click", undo);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { if (!bar.contains(document.activeElement)) bar.innerHTML = ""; }, 7000);
+}
+
+/* ---------- Preferences (per browser) ---------- */
+let prefs = Object.assign({ text: "100", theme: "system", contrast: false, motion: false, tab: "show" }, (() => { try { return JSON.parse(store.get(PREFS_KEY) || store.get("micplot-web:prefs")) || {}; } catch { return {}; } })());
+function applyPrefs() {
+  const r = document.documentElement;
+  r.style.setProperty("--text-scale", prefs.text + "%");
+  if (prefs.theme === "system") r.removeAttribute("data-theme"); else r.setAttribute("data-theme", prefs.theme);
+  if (prefs.contrast) r.setAttribute("data-contrast", "more"); else r.removeAttribute("data-contrast");
+  if (prefs.motion) r.setAttribute("data-motion", "reduce"); else r.removeAttribute("data-motion");
+  store.set(PREFS_KEY, JSON.stringify(prefs));
+}
+
+/* ---------- Header ---------- */
+function renderHeader() {
+  $("#headerShow").textContent = show.title || "Untitled show";
+  document.title = `${show.title || "Untitled show"} · MicPlotter`;
+  const ok = plot.micCount <= plot.avail;
+  $("#headerStatus").innerHTML = `
+    <span class="pill ${ok ? "good" : "bad"}">${ok ? "✓" : "!"} ${plot.micCount} of ${plot.avail} mics</span>
+    <button type="button" class="btn secondary" id="undoBtn" ${undoStack.length ? "" : "disabled"}>Undo</button>`;
+  $("#undoBtn").addEventListener("click", undo);
+}
+
+/* ---------- Tabs ---------- */
+const TABS = ["show", "cast", "scenes", "grid", "plot", "paper", "help"];
+function selectTab(name, focus = false) {
+  if (!TABS.includes(name)) name = "show";
+  prefs.tab = name; applyPrefs();
+  for (const t of TABS) {
+    const tab = $("#tab-" + t), panel = $("#panel-" + t), sel = t === name;
+    tab.setAttribute("aria-selected", sel); tab.tabIndex = sel ? 0 : -1; panel.hidden = !sel;
+  }
+  renderers[name]();
+  if (focus) $("#tab-" + name).focus();
+  try { history.replaceState(null, "", "#" + name); } catch {}
+}
+function renderActive() { renderers[prefs.tab]?.(); }
+document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { e.preventDefault(); selectTab(g.dataset.goto, true); } });
+$("#tablist").addEventListener("click", e => { const t = e.target.closest('[role="tab"]'); if (t) selectTab(t.id.slice(4)); });
+$("#tablist").addEventListener("keydown", e => {
+  const i = TABS.indexOf(prefs.tab); let n = null;
+  if (e.key === "ArrowRight") n = (i + 1) % TABS.length;
+  else if (e.key === "ArrowLeft") n = (i - 1 + TABS.length) % TABS.length;
+  else if (e.key === "Home") n = 0; else if (e.key === "End") n = TABS.length - 1;
+  if (n != null) { e.preventDefault(); selectTab(TABS[n], true); }
+});
+
+/* ---------- Opening MicPlot 3.0 (.mpl) files ----------
+   An .mpl file starts with a plain text header ("Micplot by CH Sound Design.
+   Version 3.0i"). Everything after it is XOR-ed with Delphi's random number
+   generator, seeded with 0: key byte = Round(Random * 255).
+   The data is a list of Delphi short strings (length byte + text), bytes,
+   big-endian numbers, 'T'/'F' booleans and 256-bit sets (length byte + bytes). */
+function isMplFile(bytes) {
+  const head = new TextDecoder("latin1").decode(bytes.slice(1, 1 + bytes[0]));
+  return head.startsWith("Micplot by CH Sound Design");
+}
+function decryptMpl(bytes) {
+  const start = 1 + bytes[0];
+  const out = new Uint8Array(bytes);
+  let seed = 0;
+  for (let i = start; i < out.length; i++) {
+    seed = (Math.imul(seed, 0x08088405) + 1) >>> 0;
+    out[i] ^= Math.round(seed / 4294967296 * 255) & 0xff;
+  }
+  return out;
+}
+function parseMpl(raw, fileName) {
+  const bytes = new Uint8Array(raw);
+  const header = new TextDecoder("latin1").decode(bytes.slice(1, 1 + bytes[0]));
+  const version = (header.match(/Version\s+(\S+)/) || [])[1] || "unknown";
+  if (!/^3\.0/.test(version)) throw new Error(`This file was saved by MicPlot version ${version}. Only MicPlot 3.0 files can be opened. Open it in MicPlot 3.0, save it, and try again.`);
+  const d = decryptMpl(bytes);
+  let p = 1 + bytes[0];
+  const need = n => { if (p + n > d.length) throw new Error("The file ends too early. It may be damaged."); };
+  const byte = () => { need(1); return d[p++]; };
+  const word = () => (byte() << 8) | byte();
+  const int32 = () => ((byte() << 24) | (byte() << 16) | (byte() << 8) | byte()) >>> 0;
+  const latin = n => { need(n); const s = new TextDecoder("windows-1252").decode(d.slice(p, p + n)); p += n; return s; };
+  const str = () => latin(byte());
+  const longStr = () => latin(int32());
+  const bool = () => { const c = byte(); if (c !== 0x54 && c !== 0x46) throw new Error("The file's contents don't match the MicPlot 3.0 layout."); return c === 0x54; };
+  const set = () => { const n = byte(); need(n); const out = []; for (let i = 0; i < n * 8; i++) if (d[p + (i >> 3)] >> (i & 7) & 1) out.push(i); p += n; return out; };
+
+  p += 8; // date saved
+  const info = [str(), str(), str(), str(), str()];
+  const pages = [];
+  for (let n = byte(), i = 0; i < n; i++) pages.push({ intermission: bool(), act: byte(), scene: byte(), label: str(), flag: bool(), note: str() });
+  const chars = [];
+  for (let n = byte(), i = 0; i < n; i++) chars.push({ name: str(), code: str(), actor: byte(), x: byte(), y: byte() });
+  const actors = [];
+  for (let n = byte(), i = 0; i < n; i++) {
+    const a = { name: str(), code: str(), ensemble: bool() };
+    p += 8; a.computed = set(); a.quality = byte(); a.mic = byte(); a.micPages = set();
+    actors.push(a);
+  }
+  for (let n = byte(), i = 0; i < n; i++) { // groups
+    str(); word(); byte(); byte();
+    for (let k = 0; k < 2; k++) { const s = set(); s.forEach(b => { if (b >= 1 && b <= 254) { byte(); byte(); } }); }
+  }
+  byte(); const noteNames = [str(), str(), str()];
+  const moves = [];
+  for (let n = word(), i = 0; i < n; i++) {
+    const m = { id: str(), title: str(), page: byte(), cue: str(), notes: [longStr(), longStr(), longStr()] };
+    m.chars = [set(), set(), set(), set()];   // entrances: must mic, nice to mic, don't mic; then exits
+    m.ens = [set(), set(), set(), set()];     // the same for ensemble actors
+    moves.push(m);
+  }
+  const mics = [];
+  let mplRules = [], mplEffort = "", mplTxMode = "", mplTxCount = 0;
+  try {
+    for (let i = 0; i < 12; i++) { const id = byte(), on = bool(); if (id && RULES.some(r => r.id === id) && !mplRules.some(r => r.id === id)) mplRules.push({ id, on }); }
+    const opts = [byte(), byte(), byte(), byte()];
+    mplEffort = ["rough", "quick", "medium", "thorough"][opts[1]] || "";
+    mplTxMode = opts[2] === 1 ? "fixed" : opts[2] === 0 ? "auto" : "";
+    mplTxCount = opts[3];
+    byte(); byte(); var swapPages = byte(); bool(); byte(); bool(); byte();
+    for (let n = byte(), i = 0; i < n; i++) mics.push({ name: str(), type: byte(), wearers: str() });
+  } catch { /* settings are optional for the import */ }
+
+  // Build a MicPlotter show: one scene per movement
+  const show = emptyShow();
+  show.title = info[0] || (fileName || "Imported show").replace(/\.mpl$/i, "");
+  show.settings.mics = mics.length || Math.max(16, ...actors.map(a => a.mic || 0));
+  show.settings.swapGap = 1;
+  show.source = { from: "MicPlot 3.0", file: fileName || "", date: info[1], venue: info[2], swapPages: swapPages ?? null };
+  show.actors = actors.map(a => ({ id: uid(), name: a.name || "Unnamed actor", preferredMic: a.mic || "", whenMiked: "normal", priority: 3 }));
+  // Desktop plot settings: rule order and switches, search effort, transmitter mode
+  if (mplRules.length) show.settings.rules = mplRules;
+  if (mplEffort) show.settings.effort = mplEffort;
+  if (mplTxMode) show.settings.txMode = mplTxMode;
+  if (mplTxMode === "fixed" && mplTxCount > 0) show.settings.mics = mplTxCount;
+  show.characters = chars.map(c => ({ id: uid(), name: c.name || "Unnamed character", actorId: show.actors[c.actor - 1]?.id || "", understudyId: "", scenes: [] }));
+  const ensembleChar = new Map(); // actor index -> character
+  const sceneOf = (m, k) => {
+    let id = m.id.trim(), name = m.title.trim();
+    const pre = name.match(/^([A-Za-z]?\d+\s*[A-Za-z]?\d*)\s*[-–:]\s*(.+)$/);
+    if (!id && pre) { id = pre[1].replace(/\s+/g, ""); name = pre[2]; }
+    if (!id && /^[A-Za-z]?\d+\s*[A-Za-z]?\d*$/.test(name)) id = name.replace(/\s+/g, "");
+    const pg = pages[m.page - 1];
+    if (name === id) name = "";
+    if (pg?.intermission && !name) { name = "Intermission"; if (!id) id = "Int"; }
+    if (pg?.label) name = name ? `${name} (p. ${pg.label})` : `Page ${pg.label}`;
+    return { id: uid(), code: id || String(k + 1), name, intermission: !!pg?.intermission };
+  };
+  let onChars = new Set(), onEns = new Set(), niceSkipped = 0;
+  moves.forEach((m, k) => {
+    const scene = sceneOf(m, k);
+    show.scenes.push(scene);
+    for (const list of [m.chars[1], m.chars[2], m.chars[3]]) list.forEach(c => onChars.delete(c));
+    m.chars[0].forEach(c => onChars.add(c));
+    niceSkipped += m.chars[1].length + m.ens[1].length;
+    for (const list of [m.ens[1], m.ens[2], m.ens[3]]) list.forEach(a => onEns.delete(a));
+    m.ens[0].forEach(a => onEns.add(a));
+    if (pages[m.page - 1]?.intermission) return; // nobody is on during the intermission
+    onChars.forEach(c => { const ch = show.characters[c - 1]; if (ch) ch.scenes.push(scene.id); });
+    onEns.forEach(a => {
+      const actor = show.actors[a - 1]; if (!actor) return;
+      if (!ensembleChar.has(a)) {
+        const ch = { id: uid(), name: `Ensemble (${actor.name.split(/\s+/)[0]})`, actorId: actor.id, understudyId: "", scenes: [] };
+        ensembleChar.set(a, ch); show.characters.push(ch);
+      }
+      ensembleChar.get(a).scenes.push(scene.id);
+    });
+  });
+  normaliseShow(show);
+  return { show, summary: { actors: show.actors.length, characters: chars.length, ensemble: ensembleChar.size, scenes: show.scenes.length, pages: pages.length, niceSkipped } };
+}
+
+/* ---------- Panel: Show & settings ---------- */
+function renderShowPanel() {
+  const p = $("#panel-show");
+  p.innerHTML = `
+    <div class="panel-head">
+      <h2>Show</h2>
+      <p>Set up the show and how many wireless mics you have. Then work through the numbered tabs: Cast, Scenes, Who's on, and the finished Mic plot.</p>
+    </div>
+    ${show.example ? `<p class="pill warn" role="note">You're looking at an example show. Change anything, or start a new show below.</p>` : ""}
+    <div class="cols">
+      <section class="card" aria-labelledby="h-details">
+        <h3 id="h-details">Show details</h3>
+        <div class="field"><label for="f-title">Show name</label><input type="text" id="f-title" value="${esc(show.title)}" autocomplete="off"></div>
+        <div class="field">
+          <label for="f-mics">Wireless mics available</label>
+          <span class="hint" id="f-mics-hint">The number of mic packs you have for this show.</span>
+          <input type="number" id="f-mics" min="0" max="999" inputmode="numeric" value="${esc(show.settings.mics)}" aria-describedby="f-mics-hint">
+        </div>
+        <p class="hint">Swap times, rules and the other plot settings are on the <a href="#plot" data-goto="plot">Mic plot tab</a>.</p>
+      </section>
+      <section class="card" aria-labelledby="h-file">
+        <h3 id="h-file">Save and open</h3>
+        <p>Your show saves itself in this browser as you work. To back it up or move it to another computer, save it as a file.</p>
+        <p class="hint" id="open-hint">Opens shows saved here and MicPlot 3.0 files (.mpl). You can also drop a file anywhere on the page.</p>
+        <div class="btns">
+          <button type="button" class="btn" id="b-export">Save show as file</button>
+          <button type="button" class="btn secondary" id="b-import" aria-describedby="open-hint">Open show or MicPlot file…</button>
+          <input type="file" id="f-import" accept=".mpl,.json,application/json" hidden>
+        </div>
+        <div class="btns">
+          <button type="button" class="btn secondary" id="b-csv">Download plot as spreadsheet (CSV)</button>
+        </div>
+        <div class="btns" id="newShowArea">
+          <button type="button" class="btn secondary" id="b-example">Load example show</button>
+          <button type="button" class="btn danger" id="b-new">Start a new show</button>
+        </div>
+        <p id="file-msg" role="status"></p>
+      </section>
+      <section class="card" aria-labelledby="h-display">
+        <h3 id="h-display">Display</h3>
+        <p class="hint">These settings stay with this browser.</p>
+        <div class="field"><label for="p-text">Text size</label>
+          <select id="p-text">${["100", "125", "150", "175", "200"].map(v => `<option value="${v}" ${prefs.text === v ? "selected" : ""}>${v}%</option>`).join("")}</select></div>
+        <div class="field"><label for="p-theme">Colour theme</label>
+          <select id="p-theme">${[["system", "Match my device"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) => `<option value="${v}" ${prefs.theme === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        <label class="check"><input type="checkbox" id="p-contrast" ${prefs.contrast ? "checked" : ""}> Higher contrast</label>
+        <label class="check"><input type="checkbox" id="p-motion" ${prefs.motion ? "checked" : ""}> Reduce motion</label>
+      </section>
+    </div>`;
+
+  $("#f-title").addEventListener("change", e => mutate(() => { show.title = e.target.value.trim() || "Untitled show"; delete show.example; }));
+  const num = (id, key, min, max) => $(id).addEventListener("change", e => {
+    const v = parseInt(e.target.value, 10);
+    if (Number.isNaN(v) || v < min || v > max) { e.target.setAttribute("aria-invalid", "true"); announce(`Enter a whole number from ${min} to ${max}.`); return; }
+    e.target.removeAttribute("aria-invalid");
+    mutate(() => { show.settings[key] = v; });
+    announce(`Saved. The plot now needs ${plot.micCount} mics.`);
+  });
+  num("#f-mics", "mics", 0, 999);
+
+  $("#b-export").addEventListener("click", () => {
+    download(`${slug(show.title)}.micplotter.json`, JSON.stringify(show, null, 2), "application/json");
+    $("#file-msg").textContent = "Show file saved to your downloads.";
+  });
+  $("#b-csv").addEventListener("click", () => { download(`${slug(show.title)}-mic-plot.csv`, plotCSV(), "text/csv"); $("#file-msg").textContent = "Spreadsheet saved to your downloads."; });
+  $("#b-import").addEventListener("click", () => $("#f-import").click());
+  $("#f-import").addEventListener("change", async e => {
+    const f = e.target.files[0]; if (!f) return;
+    e.target.value = "";
+    await openShowFile(f);
+  });
+  $("#b-example").addEventListener("click", () => { mutate(() => { show = normaliseShow(exampleShow()); }); renderShowPanel(); toast("Example show loaded.", true); });
+  $("#b-new").addEventListener("click", () => {
+    const area = $("#newShowArea");
+    area.innerHTML = `<p role="alert"><strong>Clear everything and start a new show?</strong> You can undo this.</p>
+      <button type="button" class="btn danger" id="b-new-yes">Yes, start new show</button>
+      <button type="button" class="btn secondary" id="b-new-no">Cancel</button>`;
+    $("#b-new-yes").focus();
+    $("#b-new-yes").addEventListener("click", () => { mutate(() => { show = emptyShow(); }); renderShowPanel(); toast("Started a new show.", true); $("#f-title").focus(); });
+    $("#b-new-no").addEventListener("click", () => { renderShowPanel(); $("#b-new").focus(); });
+  });
+  $("#p-text").addEventListener("change", e => { prefs.text = e.target.value; applyPrefs(); });
+  $("#p-theme").addEventListener("change", e => { prefs.theme = e.target.value; applyPrefs(); });
+  $("#p-contrast").addEventListener("change", e => { prefs.contrast = e.target.checked; applyPrefs(); });
+  $("#p-motion").addEventListener("change", e => { prefs.motion = e.target.checked; applyPrefs(); });
+}
+async function openShowFile(f) {
+  const msg = text => { const el = $("#file-msg"); if (el) el.textContent = text; };
+  try {
+    const buf = new Uint8Array(await f.arrayBuffer());
+    if (buf.length && isMplFile(buf)) {
+      const { show: s, summary: r } = parseMpl(buf, f.name);
+      mutate(() => { show = s; });
+      selectTab("show");
+      const parts = [`${r.actors} actors`, `${r.characters} characters`, `${r.scenes} scenes`];
+      if (r.ensemble) parts.push(`${r.ensemble} ensemble tracks`);
+      let text = `Opened “${show.title}” from MicPlot: ${parts.join(", ")}.`;
+      if (r.niceSkipped) text += ` ${r.niceSkipped} “Nice to mic” entrances were left out, so only “Must mic” entrances need a mic.`;
+      msg(text);
+      toast(`Opened “${show.title}” from MicPlot.`, true);
+      return;
+    }
+    const s = JSON.parse(new TextDecoder().decode(buf));
+    if (!validShow(s)) throw new Error("That file isn't a show file. Choose a MicPlot (.mpl) file or a file saved with “Save show as file”.");
+    s.scenes.forEach(x => { x.id ||= uid(); }); s.characters.forEach(x => { x.scenes ||= []; });
+    normaliseShow(s);
+    mutate(() => { show = s; });
+    selectTab("show");
+    msg(`Opened “${show.title}”.`);
+    toast(`Opened “${show.title}”.`, true);
+  } catch (err) {
+    const text = err instanceof SyntaxError ? "That file isn't a show file. Choose a MicPlot (.mpl) file or a file saved with “Save show as file”." : err.message;
+    selectTab("show"); msg(text); announce(text);
+  }
+}
+// Drop a show file anywhere on the page to open it
+document.addEventListener("dragover", e => { if ([...e.dataTransfer.items].some(i => i.kind === "file")) e.preventDefault(); });
+document.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) { e.preventDefault(); openShowFile(f); } });
+
+function slug(s) { return (s || "show").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "show"; }
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ---------- Panel: Cast ---------- */
+function actorOptions(selected, emptyLabel) {
+  return `<option value="">${esc(emptyLabel)}</option>` + show.actors.map(a => `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.name)}</option>`).join("");
+}
+function renderCastPanel() {
+  const p = $("#panel-cast");
+  p.innerHTML = `
+    <div class="panel-head">
+      <h2>Cast</h2>
+      <p>Add the people in your show (actors) and the parts they play (characters). One actor can play several characters. Mics go to actors, so a quick-change keeps the same mic.</p>
+    </div>
+    <section class="card" aria-labelledby="h-actors">
+      <h3 id="h-actors">Actors <span class="hint">(${show.actors.length})</span></h3>
+      <form class="row" id="addActor" novalidate>
+        <div class="field"><label for="na-name">Actor's name</label><input type="text" id="na-name" autocomplete="off" required aria-describedby="na-err"></div>
+        <button class="btn" type="submit">Add actor</button>
+      </form>
+      <p class="error" id="na-err" aria-live="polite"></p>
+      ${show.actors.length ? `<div class="table-scroll"><table class="edit-table">
+        <caption>Each actor's mic rules. A priority mic is a mic number this actor should get when possible. Priority decides who keeps a mic when there aren't enough.</caption>
+        <thead><tr><th scope="col">Name</th><th scope="col">Plays</th><th scope="col">Priority mic</th><th scope="col">When miked</th><th scope="col">Priority</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+        <tbody>${show.actors.map(a => {
+          const plays = show.characters.filter(c => c.actorId === a.id).map(c => c.name).join(", ");
+          return `<tr data-id="${a.id}">
+            <td><label class="sr-only" for="an-${a.id}">Name</label><input type="text" id="an-${a.id}" data-f="name" value="${esc(a.name)}"></td>
+            <td>${plays ? esc(plays) : '<span class="hint">No characters yet</span>'}</td>
+            <td class="narrow"><label class="sr-only" for="ap-${a.id}">Priority mic for ${esc(a.name)}</label><input type="number" min="1" max="999" inputmode="numeric" id="ap-${a.id}" data-f="preferredMic" value="${esc(a.preferredMic)}" placeholder="Any"></td>
+            <td><label class="sr-only" for="aw-${a.id}">When ${esc(a.name)} is miked</label><select id="aw-${a.id}" data-f="whenMiked">${WHEN_MIKED.map(([k, l]) => `<option value="${k}" ${a.whenMiked === k ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+            <td class="narrow"><label class="sr-only" for="ar-${a.id}">Priority for ${esc(a.name)}</label><select id="ar-${a.id}" data-f="priority">${[1, 2, 3, 4, 5].map(n => `<option value="${n}" ${a.priority === n ? "selected" : ""}>${n}${n === 1 ? " (highest)" : n === 5 ? " (lowest)" : ""}</option>`).join("")}</select></td>
+            <td class="narrow"><button type="button" class="icon del" data-del="actor" aria-label="Remove actor ${esc(a.name)}">✕</button></td>
+          </tr>`; }).join("")}</tbody></table></div>` : `<p class="hint">No actors yet. Add the first one above.</p>`}
+    </section>
+    <section class="card" aria-labelledby="h-chars">
+      <h3 id="h-chars">Characters <span class="hint">(${show.characters.length})</span></h3>
+      <form class="row" id="addChar" novalidate>
+        <div class="field"><label for="nc-name">Character's name</label><input type="text" id="nc-name" autocomplete="off" required aria-describedby="nc-err"></div>
+        <div class="field"><label for="nc-actor">Played by</label><select id="nc-actor">${actorOptions(show.actors[show.actors.length - 1]?.id || "", "Not cast yet")}</select></div>
+        <button class="btn" type="submit">Add character</button>
+      </form>
+      <p class="error" id="nc-err" aria-live="polite"></p>
+      ${show.characters.length ? `<div class="table-scroll"><table class="edit-table">
+        <caption>Characters, who plays them, and who covers them. The understudy check on the Mic plot tab uses the understudy column.</caption>
+        <thead><tr><th scope="col">Character</th><th scope="col">Played by</th><th scope="col">Understudy</th><th scope="col">Scenes</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+        <tbody>${show.characters.map(c => `<tr data-id="${c.id}">
+            <td><label class="sr-only" for="cn-${c.id}">Character name</label><input type="text" id="cn-${c.id}" data-f="name" value="${esc(c.name)}"></td>
+            <td><label class="sr-only" for="ca-${c.id}">${esc(c.name)} is played by</label><select id="ca-${c.id}" data-f="actorId">${actorOptions(c.actorId, "Not cast yet")}</select></td>
+            <td><label class="sr-only" for="cu-${c.id}">Understudy for ${esc(c.name)}</label><select id="cu-${c.id}" data-f="understudyId">${actorOptions(c.understudyId, "None")}</select></td>
+            <td class="narrow mono">${c.scenes.length}</td>
+            <td class="narrow"><button type="button" class="icon del" data-del="character" aria-label="Remove character ${esc(c.name)}">✕</button></td>
+          </tr>`).join("")}</tbody></table></div>` : `<p class="hint">No characters yet.</p>`}
+    </section>`;
+
+
+  $("#addActor").addEventListener("submit", e => {
+    e.preventDefault();
+    const inp = $("#na-name"), name = inp.value.trim();
+    if (!name) { $("#na-err").textContent = "Type the actor's name first."; inp.setAttribute("aria-invalid", "true"); inp.focus(); return; }
+    mutate(() => { show.actors.push({ id: uid(), name, preferredMic: "", whenMiked: "normal", priority: 3 }); delete show.example; }, { rerender: ["cast"] });
+    toast(`Added actor ${name}.`, true);
+    $("#na-name").focus();
+  });
+  $("#addChar").addEventListener("submit", e => {
+    e.preventDefault();
+    const inp = $("#nc-name"), name = inp.value.trim(), actorId = $("#nc-actor").value;
+    if (!name) { $("#nc-err").textContent = "Type the character's name first."; inp.setAttribute("aria-invalid", "true"); inp.focus(); return; }
+    mutate(() => { show.characters.push({ id: uid(), name, actorId, understudyId: "", scenes: [] }); delete show.example; }, { rerender: ["cast"] });
+    toast(`Added character ${name}.`, true);
+    $("#nc-name").focus();
+  });
+}
+// Row edits and removals on the Cast tab (bound once; rows are re-rendered)
+$("#panel-cast").addEventListener("change", e => {
+  const el = e.target, f = el.dataset.f, tr = el.closest("tr[data-id]"); if (!f || !tr) return;
+  const id = tr.dataset.id;
+  const actor = show.actors.find(a => a.id === id);
+  mutate(() => {
+    const obj = actor || show.characters.find(c => c.id === id);
+    if (f === "priority") obj.priority = parseInt(el.value, 10) || 3;
+    else if (f === "preferredMic") obj.preferredMic = el.value === "" ? "" : Math.max(1, parseInt(el.value, 10) || 1);
+    else if (f === "name") obj.name = el.value.trim() || obj.name;
+    else obj[f] = el.value;
+  });
+  if (f === "name" || f === "actorId") { const focusId = el.id; renderCastPanel(); document.getElementById(focusId)?.focus(); }
+  announce(`Saved. The plot now needs ${plot.micCount} mics.`);
+});
+$("#panel-cast").addEventListener("click", e => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const tr = b.closest("tr"), id = tr.dataset.id, kind = b.dataset.del;
+  const nextId = (tr.nextElementSibling || tr.previousElementSibling)?.dataset.id;
+  let label;
+  if (kind === "actor") {
+    label = `actor ${show.actors.find(x => x.id === id).name}`;
+    mutate(() => {
+      show.actors = show.actors.filter(x => x.id !== id);
+      show.characters.forEach(c => { if (c.actorId === id) c.actorId = ""; if (c.understudyId === id) c.understudyId = ""; });
+    });
+  } else {
+    label = `character ${show.characters.find(x => x.id === id).name}`;
+    mutate(() => { show.characters = show.characters.filter(x => x.id !== id); });
+  }
+  renderCastPanel();
+  const next = nextId && document.querySelector(`#panel-cast tr[data-id="${nextId}"] [data-del]`);
+  (next || $(kind === "actor" ? "#na-name" : "#nc-name")).focus();
+  toast(`Removed ${label}.`, true);
+});
+
+/* ---------- Panel: Scenes ---------- */
+function renderScenesPanel() {
+  const p = $("#panel-scenes");
+  const nextCode = suggestCode();
+  p.innerHTML = `
+    <div class="panel-head">
+      <h2>Scenes</h2>
+      <p>List the scenes or musical numbers in running order. Split a scene wherever the people on stage change, because mic swaps can only happen between these points.</p>
+    </div>
+    <section class="card" aria-labelledby="h-scenes">
+      <h3 id="h-scenes">Running order <span class="hint">(${show.scenes.length} scenes)</span></h3>
+      <form class="row" id="addScene" novalidate>
+        <div class="field" style="flex:0 1 8rem"><label for="ns-code">Number</label><input type="text" id="ns-code" value="${esc(nextCode)}" autocomplete="off"></div>
+        <div class="field"><label for="ns-name">Scene or song name</label><input type="text" id="ns-name" autocomplete="off" aria-describedby="ns-err"></div>
+        <button class="btn" type="submit">Add scene</button>
+      </form>
+      <p class="error" id="ns-err" aria-live="polite"></p>
+      ${show.scenes.length ? `<div class="table-scroll"><table class="edit-table">
+        <caption>Scenes in running order. Use the arrow buttons to move a scene. Tick “Intermission” for the intermission, so swaps there count as intermission swaps.</caption>
+        <thead><tr><th scope="col">Order</th><th scope="col">Number</th><th scope="col">Name</th><th scope="col">Intermission</th><th scope="col">On stage</th><th scope="col"><span class="sr-only">Move and remove</span></th></tr></thead>
+        <tbody>${show.scenes.map((s, i) => `<tr data-id="${s.id}">
+          <td class="narrow mono">${i + 1}</td>
+          <td class="narrow"><label class="sr-only" for="sc-${s.id}">Number for scene ${i + 1}</label><input type="text" id="sc-${s.id}" data-f="code" value="${esc(s.code)}" style="width:6rem"></td>
+          <td><label class="sr-only" for="sn-${s.id}">Name for scene ${i + 1}</label><input type="text" id="sn-${s.id}" data-f="name" value="${esc(s.name)}"></td>
+          <td class="narrow"><label class="check"><input type="checkbox" data-f="intermission" ${s.intermission ? "checked" : ""}><span class="sr-only">${esc(s.code || s.name)} is the intermission</span></label></td>
+          <td class="narrow mono">${plot.peak[i] ?? 0}</td>
+          <td class="narrow"><div class="btns">
+            <button type="button" class="icon" data-move="-1" aria-label="Move ${esc(s.code || s.name)} earlier" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="icon" data-move="1" aria-label="Move ${esc(s.code || s.name)} later" ${i === show.scenes.length - 1 ? "disabled" : ""}>↓</button>
+            <button type="button" class="icon del" data-del="scene" aria-label="Remove scene ${esc(s.code)} ${esc(s.name)}">✕</button>
+          </div></td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No scenes yet. Add the first one above.</p>`}
+    </section>`;
+  $("#addScene").addEventListener("submit", e => {
+    e.preventDefault();
+    const code = $("#ns-code").value.trim(), name = $("#ns-name").value.trim();
+    if (!code && !name) { $("#ns-err").textContent = "Give the scene a number or a name."; $("#ns-name").focus(); return; }
+    mutate(() => { show.scenes.push({ id: uid(), code: code || String(show.scenes.length + 1), name }); delete show.example; }, { rerender: ["scenes"] });
+    toast(`Added scene ${code} ${name}.`, true);
+    $("#ns-name").focus();
+  });
+}
+function suggestCode() {
+  const last = show.scenes[show.scenes.length - 1]?.code || "";
+  const m = last.match(/^(.*?)(\d+)$/);
+  return m ? m[1] + (parseInt(m[2], 10) + 1) : (show.scenes.length + 1).toString();
+}
+$("#panel-scenes").addEventListener("change", e => {
+  const el = e.target, f = el.dataset.f, tr = el.closest("tr[data-id]"); if (!f || !tr) return;
+  mutate(() => { const s = show.scenes.find(x => x.id === tr.dataset.id); s[f] = f === "intermission" ? el.checked : el.value.trim(); });
+  announce("Saved.");
+});
+$("#panel-scenes").addEventListener("click", e => {
+  const b = e.target.closest("[data-move],[data-del]"); if (!b) return;
+  const id = b.closest("tr").dataset.id, i = show.scenes.findIndex(s => s.id === id), s = show.scenes[i];
+  if (b.dataset.move) {
+    const j = i + parseInt(b.dataset.move, 10);
+    mutate(() => { [show.scenes[i], show.scenes[j]] = [show.scenes[j], show.scenes[i]]; });
+    renderScenesPanel();
+    const dir = b.dataset.move;
+    const btn = document.querySelector(`#panel-scenes tr[data-id="${id}"] [data-move="${dir}"]`);
+    (btn && !btn.disabled ? btn : document.querySelector(`#panel-scenes tr[data-id="${id}"] [data-move="${-dir}"]`))?.focus();
+    announce(`Moved ${s.code || s.name} to position ${j + 1} of ${show.scenes.length}.`);
+  } else {
+    const nextId = show.scenes[i + 1]?.id || show.scenes[i - 1]?.id;
+    mutate(() => { show.scenes.splice(i, 1); show.characters.forEach(c => { c.scenes = c.scenes.filter(x => x !== id); }); });
+    renderScenesPanel();
+    (nextId ? document.querySelector(`#panel-scenes tr[data-id="${nextId}"] [data-del]`) : $("#ns-name")).focus();
+    toast(`Removed scene ${s.code} ${s.name}.`, true);
+  }
+});
+
+/* ---------- Panel: Who's on (scene grid) ---------- */
+function renderGridPanel() {
+  const p = $("#panel-grid");
+  const actorName = id => show.actors.find(a => a.id === id)?.name || "Not cast";
+  if (!show.characters.length || !show.scenes.length) {
+    p.innerHTML = `<div class="panel-head"><h2>Who's on</h2><p>Add characters on the Cast tab and scenes on the Scenes tab first. This grid then lets you tick who is on stage in each scene.</p></div>`;
+    return;
+  }
+  p.innerHTML = `
+    <div class="panel-head">
+      <h2>Who's on</h2>
+      <p>Tick each scene a character needs a mic in. Use the arrow keys to move around the grid and Space to tick or untick.</p>
+      <div class="legend" aria-hidden="true"><span><span class="swatch" style="background:var(--on-cell);border-color:var(--on-cell)"></span>On stage, needs a mic</span><span><span class="swatch"></span>Off stage</span></div>
+    </div>
+    <div class="table-scroll">
+      <table class="grid-table" id="sceneGrid">
+        <caption>Characters by scene. ${show.characters.length} characters, ${show.scenes.length} scenes.</caption>
+        <thead><tr><th scope="col">Character</th>${show.scenes.map(s => `<th scope="col" id="gh-${s.id}"><span class="code">${esc(s.code)}</span><span class="sname" title="${esc(s.name)}">${esc(s.name)}</span></th>`).join("")}<th scope="col">Total</th></tr></thead>
+        <tbody>${show.characters.map((c, r) => `<tr>
+          <th scope="row" id="gr-${c.id}">${esc(c.name)}<span class="actor">${esc(actorName(c.actorId))}</span></th>
+          ${show.scenes.map((s, k) => `<td><input type="checkbox" class="cellbox" data-c="${c.id}" data-s="${s.id}" data-r="${r}" data-k="${k}" aria-labelledby="gr-${c.id} gh-${s.id}" ${c.scenes.includes(s.id) ? "checked" : ""} tabindex="${r === 0 && k === 0 ? 0 : -1}"></td>`).join("")}
+          <td class="mono" data-total="${c.id}">${c.scenes.length}</td>
+        </tr>`).join("")}</tbody>
+        <tfoot><tr><th scope="row">Actors on stage</th>${show.scenes.map((s, k) => `<td data-peak="${k}">${plot.peak[k]}</td>`).join("")}<td></td></tr></tfoot>
+      </table>
+    </div>`;
+}
+$("#panel-grid").addEventListener("change", e => {
+  const el = e.target; if (!el.classList.contains("cellbox")) return;
+  const c = show.characters.find(x => x.id === el.dataset.c), sid = el.dataset.s;
+  mutate(() => {
+    if (el.checked) { if (!c.scenes.includes(sid)) c.scenes.push(sid); }
+    else c.scenes = c.scenes.filter(x => x !== sid);
+    const order = new Map(show.scenes.map((s, i) => [s.id, i]));
+    c.scenes.sort((a, b) => order.get(a) - order.get(b));
+    delete show.example;
+  });
+  $(`[data-total="${c.id}"]`).textContent = c.scenes.length;
+  plot.peak.forEach((v, k) => { const td = $(`[data-peak="${k}"]`); if (td) td.textContent = v; });
+});
+$("#panel-grid").addEventListener("keydown", e => {
+  const el = e.target; if (!el.classList?.contains("cellbox")) return;
+  let r = +el.dataset.r, k = +el.dataset.k;
+  const R = show.characters.length, K = show.scenes.length;
+  const moves = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowDown: [1, 0], ArrowUp: [-1, 0] };
+  if (moves[e.key]) { r = Math.min(R - 1, Math.max(0, r + moves[e.key][0])); k = Math.min(K - 1, Math.max(0, k + moves[e.key][1])); }
+  else if (e.key === "Home") { k = 0; if (e.ctrlKey) r = 0; }
+  else if (e.key === "End") { k = K - 1; if (e.ctrlKey) r = R - 1; }
+  else if (e.key === "Enter") { e.preventDefault(); el.click(); return; }
+  else return;
+  e.preventDefault();
+  const next = $(`.cellbox[data-r="${r}"][data-k="${k}"]`);
+  if (next) { el.tabIndex = -1; next.tabIndex = 0; next.focus(); }
+});
+
+/* ---------- Panel: Mic plot ---------- */
+function sceneCode(i) { const s = show.scenes[i]; return s ? (s.code || String(i + 1)) : ""; }
+function sceneFull(i) { const s = show.scenes[i]; return s ? [s.code, s.name].filter(Boolean).join(" ") : ""; }
+function actorLabel(id) { return plot.actorById.get(id)?.name || "Unknown"; }
+function charsOf(actorId, i) { return (plot.charsIn.get(actorId)?.[i] || []).map(c => c.name).join(" / "); }
+function firstName(n) { return (n || "").split(/\s+/)[0]; }
+
+function renderPlotPanel() {
+  const p = $("#panel-plot");
+  const issues = checkShow(show, plot);
+  const set = show.settings;
+  const short = plot.unmiked.length > 0 || (plot.txMode === "auto" && plot.micCount > plot.avail);
+  const under = checkUnderstudies(show, plot);
+  const S = plot.S;
+  const view = prefs.plotView === "actor" ? "actor" : "mic";
+  const sc = plot.score;
+  p.innerHTML = `
+    <div class="panel-head">
+      <h2>Mic plot</h2>
+      <p>This plot updates as you edit. Mics go on at the preset and stay on until the end of the show, unless a mic is needed for a swap. Change how the plot is chosen in Plot settings.</p>
+      <div class="row no-print">
+        <div class="field" style="flex:0 1 20rem"><label for="pp-which">Print</label>
+          <select id="pp-which">${[["all", "Wall chart, running order and checks"], ["wall", "Wall chart only"], ["run", "Running order only"]].map(([k, l]) => `<option value="${k}" ${prefs.plotPrint === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        <div class="field" style="flex:0 1 14rem"><label for="pp-view">Wall chart rows</label>
+          <select id="pp-view"><option value="mic" ${view === "mic" ? "selected" : ""}>One per mic</option><option value="actor" ${view === "actor" ? "selected" : ""}>One per actor</option></select></div>
+        <button type="button" class="btn" id="pp-print">Print mic plot</button>
+      </div>
+    </div>
+    <div class="print-only print-head">
+      <strong>${esc(show.title)}</strong> · Mic plot · ${plot.micCount} mic${plot.micCount === 1 ? "" : "s"}, ${plot.handoffs.length} swap${plot.handoffs.length === 1 ? "" : "s"} · Printed ${esc(new Date().toLocaleDateString())}
+      ${show.source?.venue ? ` · ${esc(show.source.venue)}` : ""}
+    </div>
+    <div class="summary" role="group" aria-label="Summary" data-print="all">
+      <div class="stat"><span class="label">Mics used</span><span class="value">${plot.micCount}</span><span class="hint">Fewest possible: ${plot.minMics}</span><span class="pill ${short ? "bad" : "good"}">${short ? (plot.unmiked.length ? "! Some actors have no mic" : `! ${plot.micCount - plot.avail} more than you have`) : `✓ Fits your ${plot.avail} mics`}</span></div>
+      <div class="stat"><span class="label">Mic swaps</span><span class="value">${plot.handoffs.length}</span><span class="hint">${sc.fast} fast, ${sc.nonIntermission} outside the intermission</span></div>
+      <div class="stat"><span class="label">Actors who never swap</span><span class="value">${sc.keepersCount}</span><span class="hint">of ${new Set(plot.spans.map(s => s.actorId)).size} on mic</span></div>
+      <div class="stat"><span class="label">Most swaps at one change</span><span class="value">${sc.peak}</span><span class="hint">${sc.refits} refits</span></div>
+    </div>
+
+    <section class="card no-print" aria-labelledby="h-settings">
+      <details id="ps-details" ${prefs.plotSettingsOpen === false ? "" : "open"}>
+        <summary><h3 id="h-settings" style="display:inline">Plot settings</h3></summary>
+        <div class="cols" style="margin-top:1rem">
+          <div style="display:grid;gap:.9rem;align-content:start">
+            <fieldset class="field" style="border:0;padding:0;margin:0">
+              <legend style="font-weight:600;margin-bottom:.3rem">Transmitters</legend>
+              <label class="check"><input type="radio" name="ps-tx" id="ps-tx-auto" value="auto" ${set.txMode === "auto" ? "checked" : ""}> Use as few as needed (Auto)</label>
+              <label class="check"><input type="radio" name="ps-tx" id="ps-tx-fixed" value="fixed" ${set.txMode === "fixed" ? "checked" : ""}> Use only the mics available (Manual). If there aren't enough, the lowest-priority actors go without.</label>
+            </fieldset>
+            <div class="field"><label for="ps-mics">Mics available</label><input type="number" id="ps-mics" min="0" max="999" inputmode="numeric" value="${set.mics}"></div>
+            <div class="field"><label for="ps-gap">Minimum swap time, in scenes</label><span class="hint" id="ps-gap-hint">How many scenes a mic must sit free before it can go to another actor. 0 means a swap can happen during a scene change.</span><input type="number" id="ps-gap" min="0" max="20" inputmode="numeric" value="${set.swapGap}" aria-describedby="ps-gap-hint"></div>
+            <div class="field"><label for="ps-fast">Fast swap if fewer than this many scenes</label><span class="hint" id="ps-fast-hint">Swaps with less time than this count as fast swaps. Swaps across the intermission never count as fast.</span><input type="number" id="ps-fast" min="0" max="20" inputmode="numeric" value="${set.fastGap}" aria-describedby="ps-fast-hint"></div>
+            <label class="check"><input type="checkbox" id="ps-one" ${set.onePerCast ? "checked" : ""}> One mic per cast member (no sharing)</label>
+            <div class="field"><label for="ps-effort">Search</label><span class="hint" id="ps-effort-hint">How many different plots to try before picking the best. Thorough takes longer on big shows.</span>
+              <select id="ps-effort" aria-describedby="ps-effort-hint">${[["rough", "Rough (1 plot)"], ["quick", "Quick (30 plots)"], ["medium", "Medium (150 plots)"], ["thorough", "Thorough (600 plots)"]].map(([k, l]) => `<option value="${k}" ${set.effort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+          </div>
+          <div style="display:grid;gap:.6rem;align-content:start;min-width:0">
+            <h4 style="margin:0" id="h-rules">Rules, most important first</h4>
+            <p class="hint">The plot that does best on the first ticked rule wins. Later rules only settle ties.</p>
+            <ol class="rules" aria-labelledby="h-rules">${set.rules.map((r, i) => { const R = RULES.find(x => x.id === r.id); return `<li data-rule="${r.id}">
+              <label class="check"><input type="checkbox" id="rule-${r.id}" ${r.on ? "checked" : ""} aria-describedby="rule-hint-${r.id}"> ${esc(R.label)}</label>
+              <span class="hint" id="rule-hint-${r.id}">${esc(R.hint)} This plot: <strong class="mono">${ruleValue(R.key)}</strong></span>
+              <span class="btns"><button type="button" class="icon" data-rmove="-1" aria-label="Move “${esc(R.label)}” up" ${i === 0 ? "disabled" : ""}>↑</button><button type="button" class="icon" data-rmove="1" aria-label="Move “${esc(R.label)}” down" ${i === set.rules.length - 1 ? "disabled" : ""}>↓</button></span>
+            </li>`; }).join("")}</ol>
+            <div class="btns"><button type="button" class="btn secondary" id="ps-reset">Reset rules to default</button></div>
+          </div>
+        </div>
+        <p class="hint">Tried ${plot.tried} plot${plot.tried === 1 ? "" : "s"}. Mic colour, quality, projection, vocal range and belt size rules from the desktop version aren't available yet.</p>
+      </details>
+    </section>
+
+    <section class="card" aria-labelledby="h-issues" data-print="all">
+      <h3 id="h-issues">Checks</h3>
+      <ul class="issues">${issues.length ? issues.map(x => `<li class="${x.level}"><strong>${x.level === "bad" ? "Problem: " : "Check: "}</strong><span>${esc(x.text)}${x.more ? " " + esc(x.more) : ""}</span></li>`).join("") : `<li class="good"><strong>All clear: </strong><span>Everyone who needs a mic has one.</span></li>`}</ul>
+    </section>
+
+    ${plot.micNums.length ? `
+    <section class="card print-landscape" aria-labelledby="h-wall" data-print="all wall">
+      <h3 id="h-wall">Wall chart</h3>
+      <fieldset class="row no-print" style="border:0;padding:0;margin:0;gap:1rem">
+        <legend class="sr-only">Show the wall chart</legend>
+        <label class="check"><input type="radio" name="wc-view" value="mic" ${view === "mic" ? "checked" : ""}> By mic</label>
+        <label class="check"><input type="radio" name="wc-view" value="actor" ${view === "actor" ? "checked" : ""}> By actor</label>
+      </fieldset>
+      <p class="legend"><span><span class="mark-on" aria-hidden="true">▶</span> Mic goes on before this scene</span><span><span class="mark-off" aria-hidden="true">◀</span> Mic comes off after this scene</span><span><span class="swatch" style="background:var(--accent-soft)"></span>On stage</span><span><span class="swatch held-swatch"></span>Wearing it off stage</span><span><span class="swatch" style="box-shadow:inset 4px 0 0 var(--focus)"></span>Swap</span></p>
+      <div class="table-scroll">${view === "mic" ? wallByMic() : wallByActor()}</div>
+    </section>
+
+    <section class="card" aria-labelledby="h-run" data-print="all run">
+      <h3 id="h-run">Sound crew running order</h3>
+      <p class="hint">What to collect and fit at each break, in show order.</p>
+      <ol class="runorder">${runningOrderHTML()}</ol>
+    </section>` : ""}
+
+    <section class="card" aria-labelledby="h-us" data-print="all">
+      <h3 id="h-us">Understudy check</h3>
+      ${under.length ? `<ul class="issues">${under.map(u => `<li class="${u.ok ? "good" : u.clash.length ? "bad" : "warn"}"><strong>${esc(u.understudy.name)} covering ${esc(u.character.name)}: </strong><span>${
+        u.clash.length ? `They're already on as ${esc([...new Set(u.clash.flatMap(x => x.other.map(o => o.name)))].join(", "))} in ${esc(u.clash.map(x => x.scene.code).join(", "))}. Someone else needs to cover those scenes. `
+        : ""}${u.short ? `There wouldn't be enough mics (${u.micCount} needed).` : `The plot still fits in ${u.micCount} mics.`}</span></li>`).join("")}</ul>`
+      : `<p class="hint">No understudies set. Add them on the Cast tab to check that a cover can still get a mic.</p>`}
+    </section>`;
+}
+function printPlot() {
+  const which = $("#pp-which")?.value || "all";
+  const panel = $("#panel-plot");
+  panel.dataset.printMode = which;
+  document.body.classList.add("printing-plot");
+  const done = () => { document.body.classList.remove("printing-plot"); delete panel.dataset.printMode; window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  window.print();
+  setTimeout(done, 1000);
+}
+function ruleValue(key) {
+  const sc = plot.score;
+  if (key === "keepers") return `${sc.keepersCount} actors`;
+  if (key === "unmiked") return `${sc.unmiked} scenes`;
+  if (key === "spare") return `${sc.spare} scenes`;
+  if (key === "mics") return `${sc.mics} mics`;
+  if (key === "peak") return `${sc.peak} at once`;
+  return String(sc[key]);
+}
+// What happens to a span's mic at its edges
+function fitsAt(sp, i) { return sp.start === i && !sp.kept; }
+function offAt(sp, i) { return sp.end === i && i < plot.S - 1 && !(sp.nextOnMic && sp.nextOnMic.actorId === sp.actorId); }
+function markers(sp, i) {
+  const on = fitsAt(sp, i), off = offAt(sp, i);
+  return {
+    pre: on ? `<span class="mark-on" aria-hidden="true">▶</span><span class="sr-only">Mic on before this scene. </span>` : "",
+    post: off ? `<span class="mark-off" aria-hidden="true">◀</span><span class="sr-only"> Mic off after this scene.</span>` : "",
+  };
+}
+function wallHead(first) {
+  return `<thead><tr><th scope="col">${first}</th>${show.scenes.map((s, i) => `<th scope="col"><abbr title="${esc(sceneFull(i))}">${esc(s.code)}</abbr>${s.intermission ? '<span class="sr-only"> (intermission)</span>' : ""}</th>`).join("")}</tr></thead>`;
+}
+function wallByMic() {
+  return `<table class="wall"><caption>Who wears each mic in each scene</caption>${wallHead("Mic")}
+    <tbody>${plot.micNums.map(m => `<tr><th scope="row">${m}</th>${plot.grid.get(m).map((cell, i) => {
+      if (!cell) return `<td><span class="sr-only">free</span></td>`;
+      const sp = cell.span, nm = actorLabel(sp.actorId);
+      const swap = sp.start === i && sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId;
+      const mk = markers(sp, i);
+      return `<td class="${cell.onStage ? "on" : "held"}${swap ? " swap" : ""}" title="${esc(nm)}${cell.onStage ? " as " + esc(charsOf(sp.actorId, i)) : ", off stage"}">${swap ? '<span class="sr-only">Swap. </span>' : ""}${mk.pre}${esc(firstName(nm))}${cell.onStage ? "" : '<span class="sr-only"> (off stage)</span>'}${mk.post}</td>`;
+    }).join("")}</tr>`).join("")}</tbody></table>`;
+}
+function wallByActor() {
+  const firstMic = id => Math.min(...plot.spans.filter(s => s.actorId === id).map(s => s.mic), 9999);
+  const actors = [...show.actors].sort((a, b) => firstMic(a.id) - firstMic(b.id));
+  return `<table class="wall"><caption>Which mic each actor wears in each scene</caption>${wallHead("Actor")}
+    <tbody>${actors.map(a => {
+      const mine = plot.spans.filter(s => s.actorId === a.id);
+      const none = plot.unmiked.filter(s => s.actorId === a.id);
+      return `<tr><th scope="row" style="font-family:var(--font-body);text-align:left">${esc(a.name)}</th>${show.scenes.map((_, i) => {
+        const sp = mine.find(s => s.start <= i && i <= s.end);
+        const onStage = plot.on.get(a.id)[i];
+        if (!sp) {
+          if (onStage && none.some(s => s.start <= i && i <= s.end)) return `<td class="nomic">No mic</td>`;
+          if (onStage) return `<td class="on-nomic" title="On stage, not miked">–<span class="sr-only">On stage, not miked</span></td>`;
+          return `<td><span class="sr-only">no mic</span></td>`;
+        }
+        const swap = sp.start === i && sp.prevOnMic && sp.prevOnMic.actorId !== sp.actorId;
+        const mk = markers(sp, i);
+        return `<td class="${onStage ? "on" : "held"}${swap ? " swap" : ""}" title="Mic ${sp.mic}${onStage ? " as " + esc(charsOf(a.id, i)) : ", off stage"}">${swap ? `<span class="sr-only">Swapped from ${esc(actorLabel(sp.prevOnMic.actorId))}. </span>` : ""}${mk.pre}<span class="mono">${sp.mic}</span>${onStage ? "" : '<span class="sr-only"> (off stage)</span>'}${mk.post}</td>`;
+      }).join("")}</tr>`;
+    }).join("")}</tbody></table>`;
+}
+// Plot settings and wall chart view (bound once; the panel re-renders)
+function plotSetting(fn, focusId) { mutate(fn); renderPlotPanel(); if (focusId) document.getElementById(focusId)?.focus(); announce(`Plot updated: ${plot.micCount} mics, ${plot.handoffs.length} swaps.`); }
+$("#panel-plot").addEventListener("change", e => {
+  const el = e.target, set = show.settings;
+  if (el.name === "wc-view") { prefs.plotView = el.value; applyPrefs(); renderPlotPanel(); document.querySelector(`input[name="wc-view"][value="${el.value}"]`)?.focus(); return; }
+  if (el.id === "pp-which") { prefs.plotPrint = el.value; applyPrefs(); return; }
+  if (el.id === "pp-view") { prefs.plotView = el.value; applyPrefs(); renderPlotPanel(); $("#pp-view")?.focus(); return; }
+  if (el.name === "ps-tx") return plotSetting(() => { set.txMode = el.value; }, el.id);
+  const nums = { "ps-mics": ["mics", 0, 999], "ps-gap": ["swapGap", 0, 20], "ps-fast": ["fastGap", 0, 20] };
+  if (nums[el.id]) {
+    const [key, min, max] = nums[el.id], v = parseInt(el.value, 10);
+    if (Number.isNaN(v) || v < min || v > max) { el.setAttribute("aria-invalid", "true"); announce(`Enter a whole number from ${min} to ${max}.`); return; }
+    return plotSetting(() => { set[key] = v; }, el.id);
+  }
+  if (el.id === "ps-one") return plotSetting(() => { set.onePerCast = el.checked; }, el.id);
+  if (el.id === "ps-effort") return plotSetting(() => { set.effort = el.value; }, el.id);
+  const m = el.id.match(/^rule-(\d+)$/);
+  if (m) return plotSetting(() => { set.rules.find(r => r.id === +m[1]).on = el.checked; }, el.id);
+});
+$("#panel-plot").addEventListener("click", e => {
+  const b = e.target.closest("[data-rmove]");
+  if (b) {
+    const id = +b.closest("[data-rule]").dataset.rule, rules = show.settings.rules;
+    const i = rules.findIndex(r => r.id === id), j = i + +b.dataset.rmove;
+    plotSetting(() => { [rules[i], rules[j]] = [rules[j], rules[i]]; });
+    const li = document.querySelector(`[data-rule="${id}"]`);
+    const again = li?.querySelector(`[data-rmove="${b.dataset.rmove}"]`);
+    (again && !again.disabled ? again : li?.querySelector("[data-rmove]:not([disabled])"))?.focus();
+    announce(`Moved to position ${j + 1} of ${rules.length}. Plot updated: ${plot.micCount} mics, ${plot.handoffs.length} swaps.`);
+    return;
+  }
+  if (e.target.id === "pp-print") { printPlot(); return; }
+  if (e.target.id === "ps-reset") plotSetting(() => { show.settings.rules = DEFAULT_RULES.map(r => ({ ...r })); }, "ps-reset");
+});
+$("#panel-plot").addEventListener("toggle", e => { if (e.target.id === "ps-details") { prefs.plotSettingsOpen = e.target.open; applyPrefs(); } }, true);
+function runningOrderHTML() {
+  const S = plot.S, out = [];
+  const fitLine = sp => {
+    const from = sp.prevOnMic ? `from ${esc(actorLabel(sp.prevOnMic.actorId))}` : "from the rack";
+    let k = sp.start; while (k < sp.end && !plot.on.get(sp.actorId)[k]) k++;
+    const as = charsOf(sp.actorId, k);
+    return `<li>Fit <span class="tag">mic ${sp.mic}</span> on <strong>${esc(actorLabel(sp.actorId))}</strong>${as ? ` (${esc(as)})` : ""}, ${from}</li>`;
+  };
+  const collectLine = sp => {
+    const to = sp.nextOnMic ? `goes to ${esc(actorLabel(sp.nextOnMic.actorId))} before ${esc(sceneCode(sp.nextOnMic.start))}` : "back to the rack";
+    return `<li>Collect <span class="tag">mic ${sp.mic}</span> from <strong>${esc(actorLabel(sp.actorId))}</strong>, ${to}</li>`;
+  };
+  for (let k = 0; k <= S; k++) {
+    const pt = plot.points[k];
+    if (!pt.collect.length && !pt.fit.length) continue;
+    const title = k === 0 ? "Preset, before the show" : k === S ? "After the show" : `Between ${esc(sceneFull(k - 1))} and ${esc(sceneFull(k))}`;
+    out.push(`<li><h4 style="margin:0">${title}</h4>
+      ${pt.collect.length ? `<ul aria-label="Collect">${pt.collect.sort((a, b) => a.mic - b.mic).map(collectLine).join("")}</ul>` : ""}
+      ${pt.fit.length ? `<ul aria-label="Fit">${pt.fit.sort((a, b) => a.mic - b.mic).map(fitLine).join("")}</ul>` : ""}</li>`);
+  }
+  return out.join("");
+}
+
+/* ---------- Panel: Paperwork ---------- */
+function renderPaperPanel() {
+  const p = $("#panel-paper");
+  const spansOf = id => plot.spans.filter(s => s.actorId === id).sort((a, b) => a.start - b.start);
+  const miked = show.actors.filter(a => spansOf(a.id).length);
+  const range = sp => sp.start === sp.end ? sceneCode(sp.start) : `${sceneCode(sp.start)} to ${sceneCode(sp.end)}`;
+  p.innerHTML = `
+    <div class="panel-head no-print">
+      <h2>Paperwork</h2>
+      <p>Cast slips, mic labels and rehearsal tags, ready to print. Choose what to print, then use the Print button.</p>
+      <div class="row">
+        <div class="field" style="flex:0 1 18rem"><label for="pw-which">Print</label>
+          <select id="pw-which"><option value="all">Everything</option><option value="slips">Cast slips only</option><option value="labels">Mic labels only</option><option value="tags">Rehearsal tags only</option></select></div>
+        <button type="button" class="btn" id="pw-print">Print</button>
+      </div>
+    </div>
+    <section aria-labelledby="h-slips" data-pw="slips" class="card">
+      <h3 id="h-slips">Cast slips</h3>
+      <p class="hint no-print">One for each actor: which mic they wear and when it changes.</p>
+      <div class="slips">${miked.map(a => `<article class="slip" aria-labelledby="slip-${a.id}">
+        <h3 id="slip-${a.id}">${esc(a.name)}</h3>
+        <p class="hint">${esc(show.title)}</p>
+        <ol>${spansOf(a.id).map(sp => `<li><span class="tag">Mic ${sp.mic}</span>, ${esc(range(sp))}. ${sp.kept ? "Keep it on." : sp.prevOnMic ? `Fitted before ${esc(sceneCode(sp.start))}.` : "Fitted at preset."} ${sp.nextOnMic && sp.nextOnMic.actorId !== a.id ? `Hand it in after ${esc(sceneCode(sp.end))}.` : ""}</li>`).join("")}</ol>
+      </article>`).join("") || '<p class="hint">Nobody needs a mic yet.</p>'}</div>
+    </section>
+    <section aria-labelledby="h-labels" data-pw="labels" class="card">
+      <h3 id="h-labels">Mic labels</h3>
+      <p class="hint no-print">Tape one to each pack so the crew can see who wears it and when.</p>
+      <div class="slips">${plot.micNums.map(m => {
+        const list = plot.spans.filter(s => s.mic === m).sort((a, b) => a.start - b.start);
+        return `<article class="slip" aria-label="Label for mic ${m}"><span class="label-big">${m}</span>
+          <ol>${list.map(sp => `<li><strong>${esc(actorLabel(sp.actorId))}</strong> ${esc(range(sp))}</li>`).join("")}</ol></article>`;
+      }).join("") || '<p class="hint">No mics in use yet.</p>'}</div>
+    </section>
+    <section aria-labelledby="h-tags" data-pw="tags" class="card">
+      <h3 id="h-tags">Rehearsal tags</h3>
+      <p class="hint no-print">Name tags for a mic check before tech, so you can test the plot with the cast.</p>
+      <div class="slips">${miked.map(a => `<article class="slip" aria-label="Rehearsal tag for ${esc(a.name)}"><span class="label-big">${[...new Set(spansOf(a.id).map(s => s.mic))].join(" / ")}</span><strong>${esc(a.name)}</strong><span class="hint">${esc(show.characters.filter(c => c.actorId === a.id).map(c => c.name).join(", "))}</span></article>`).join("")}</div>
+    </section>`;
+  const apply = () => { const w = $("#pw-which").value; $$("[data-pw]", p).forEach(s => { s.hidden = !(w === "all" || s.dataset.pw === w); }); };
+  $("#pw-which").addEventListener("change", apply);
+  $("#pw-print").addEventListener("click", () => window.print());
+}
+
+/* ---------- Panel: Help ---------- */
+function renderHelpPanel() {
+  $("#panel-help").innerHTML = `
+    <div class="panel-head"><h2>Help</h2><p>MicPlotter plans which actor wears which wireless mic in every scene, so a show needs as few mics and swaps as possible.</p></div>
+    <div class="cols">
+      <section class="card" aria-labelledby="h-how">
+        <h3 id="h-how">How to make a plot</h3>
+        <ol>
+          <li><strong>Show:</strong> enter how many mics you have and how long a swap takes.</li>
+          <li><strong>Cast:</strong> add actors, then the characters they play.</li>
+          <li><strong>Scenes:</strong> list every scene or number in running order.</li>
+          <li><strong>Who's on:</strong> tick each scene a character is in.</li>
+          <li><strong>Mic plot:</strong> read the wall chart, the crew running order and the checks.</li>
+          <li><strong>Paperwork:</strong> print cast slips, mic labels and rehearsal tags.</li>
+        </ol>
+        <p>Actors marked “Never swap” keep one mic for the whole show. A priority mic gives an actor that mic number whenever it's free.</p>
+      </section>
+      <section class="card" aria-labelledby="h-keys">
+        <h3 id="h-keys">Keyboard</h3>
+        <dl class="keys">
+          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Move between tabs when a tab is focused</dd>
+          <dt>Arrow keys</dt><dd>Move around the Who's on grid</dd>
+          <dt><kbd>Space</kbd></dt><dd>Tick or untick a scene in the grid</dd>
+          <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First or last scene in a grid row</dd>
+          <dt><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Undo the last change (outside text boxes)</dd>
+        </dl>
+      </section>
+      <section class="card" aria-labelledby="h-a11y">
+        <h3 id="h-a11y">Accessibility</h3>
+        <ul>
+          <li>Everything works with a keyboard alone, with a visible focus outline.</li>
+          <li>Every control has a label for screen readers, and changes are announced.</li>
+          <li>Text size goes up to 200% on the Show tab, and the page also follows your browser zoom.</li>
+          <li>Light, dark and higher-contrast colours. Information is never shown by colour alone.</li>
+          <li>Follows your device's reduced-motion and high-contrast settings.</li>
+          <li>Removing something can always be undone.</li>
+        </ul>
+      </section>
+    </div>`;
+}
+
+/* ---------- CSV export ---------- */
+function plotCSV() {
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = [["Mic", ...show.scenes.map(s => s.code)]];
+  for (const m of plot.micNums) rows.push([m, ...plot.grid.get(m).map((c, i) => c ? actorLabel(c.span.actorId) + (c.onStage ? "" : " (off)") : "")]);
+  return rows.map(r => r.map(q).join(",")).join("\r\n");
+}
+
+/* ---------- Boot ---------- */
+const renderers = { show: renderShowPanel, cast: renderCastPanel, scenes: renderScenesPanel, grid: renderGridPanel, plot: renderPlotPanel, paper: renderPaperPanel, help: renderHelpPanel };
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+    const t = e.target, typing = t.matches?.('input[type="text"], input[type="number"], textarea, select');
+    if (!typing) { e.preventDefault(); undo(); }
+  }
+});
+applyPrefs();
+renderHeader();
+selectTab((location.hash || "").slice(1) || prefs.tab);
+</script>
+</body>
+</html>
