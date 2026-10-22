@@ -37,6 +37,8 @@ Shows are stored in your own browser, in files you save, or in your own Google D
 
 ## Disclaimer
 
-MicPlotter is an independent project. It isn't affiliated with, endorsed by or connected to CH Sound Design or its MicPlot software. MicPlot and CH Sound Design are names of their respective owners. They are used here only to describe the files MicPlotter can open. MicPlotter's code was written independently and contains no MicPlot code.
+MicPlotter is a free, independent tool for theatre educators, students, and sound designers. It was built with Claude AI and uses concepts found and used in CH Sound Design's MicPlot software. MicPlotter is NOT affiliated with, endorsed by or connected to CH Sound Design or its MicPlot software. MicPlotter can open files saved by MicPlot 3.0, so people can bring existing shows across. The names MicPlot and CH Sound Design belong to their owners and are used only to describe those files.
 
-MicPlotter is provided free and as is, without warranty of any kind. Always check your plot before a performance.
+MicPlotter's code was written independently by Claude AI with large amounts of human input, trial and error, but contains no code from MicPlot.
+
+MicPlotter is provided as is, without warranty of any kind. Always check the plot, swaps and paperwork yourself before a rehearsal or performance.
