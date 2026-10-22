@@ -13,6 +13,7 @@ It's inspired by CH Sound Design's MicPlot for Windows, and it can open MicPlot 
 - An understudy check confirms that covers can still get a mic.
 - Paperwork prints cast slips, mic labels and rehearsal tags, and the mic plot itself prints on landscape pages.
 - MicPlot 3.0 `.mpl` files open directly. Shows save in the browser, and you can save them to a file.
+- Shows can be saved in your own Google Drive. Share a show the way you share any Drive file, and others can open it in MicPlotter. MicPlotter only asks for access to files it creates or that you open with it.
 
 ## Accessibility
 
@@ -32,4 +33,4 @@ The site is published with Netlify. `netlify.toml` tells Netlify to publish the 
 
 ## Privacy
 
-Shows are stored in your own browser, or in files you save. Nothing is sent to a server.
+Shows are stored in your own browser, in files you save, or in your own Google Drive. MicPlotter has no server and never receives your shows. See [privacy.html](privacy.html).

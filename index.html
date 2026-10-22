@@ -170,6 +170,12 @@ ul.issues li.bad { color: var(--bad); background: var(--bad-bg); }
 ul.issues li.warn { color: var(--warn); background: var(--warn-bg); }
 ul.issues li.good { color: var(--good); background: var(--good-bg); }
 ul.issues li span { color: var(--fg); }
+.drive-area { display: grid; gap: .6rem; border-top: 1px solid var(--line); padding-top: .9rem; }
+.drive-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+button.linklike { font: inherit; text-align: left; width: 100%; min-height: 44px; display: grid; gap: 0; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--fg); cursor: pointer; }
+button.linklike:hover { border-color: var(--accent); }
+button.linklike span:first-child { font-weight: 600; color: var(--accent); }
+.conflict { border: 2px solid var(--warn); background: var(--warn-bg); border-radius: var(--radius); padding: .7rem .8rem; display: grid; gap: .5rem; }
 .mark-on, .mark-off { color: var(--focus); font-size: .8em; }
 .mark-on { margin-right: .2rem; } .mark-off { margin-left: .2rem; }
 .held-swatch { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 3px, var(--held) 3px, var(--held) 5px); }
@@ -736,8 +742,10 @@ function renderHeader() {
   const ok = plot.micCount <= plot.avail;
   $("#headerStatus").innerHTML = `
     <span class="pill ${ok ? "good" : "bad"}">${ok ? "✓" : "!"} ${plot.micCount} of ${plot.avail} mics</span>
+    ${show.driveFileId ? (driveDirty() ? `<button type="button" class="pill warn" id="hdr-drive" style="cursor:pointer;font:inherit;font-weight:600">● Not saved to Drive</button>` : `<span class="pill good">☁ Saved to Drive</span>`) : ""}
     <button type="button" class="btn secondary" id="undoBtn" ${undoStack.length ? "" : "disabled"}>Undo</button>`;
   $("#undoBtn").addEventListener("click", undo);
+  $("#hdr-drive")?.addEventListener("click", () => { if (drive.token || drive.user) driveSave(); else { selectTab("show"); $("#dr-connect")?.focus(); } });
 }
 
 /* ---------- Tabs ---------- */
@@ -886,6 +894,241 @@ function parseMpl(raw, fileName) {
   return { show, summary: { actors: show.actors.length, characters: chars.length, ensemble: ensembleChar.size, scenes: show.scenes.length, pages: pages.length, niceSkipped } };
 }
 
+/* ---------- Google Drive ----------
+   Everything runs in the browser, between the person and Google. MicPlotter only
+   asks for "drive.file": access to files it creates or that the person opens with it.
+   Google's scripts load only when someone connects Drive. */
+const GOOGLE = {
+  clientId: "180607230797-osrkvl6ur48vj3po0va9k2p2puqqud9u.apps.googleusercontent.com",
+  apiKey: "AIzaSyB-2iMXooKEwyPV0Z6AGCOStH9tVDliVUU",
+  appId: "180607230797",
+  scope: "https://www.googleapis.com/auth/drive.file",
+};
+const drive = { token: null, exp: 0, client: null, user: null, ready: null, files: [], busy: false, msg: "", conflict: null };
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3";
+const FILE_FIELDS = "id,name,version,modifiedTime,webViewLink,mimeType,capabilities(canEdit),lastModifyingUser(displayName),owners(displayName),ownedByMe";
+
+function loadScript(src) {
+  return new Promise((ok, fail) => {
+    if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = Object.assign(document.createElement("script"), { src, async: true, onload: ok, onerror: () => fail(new Error("Couldn't reach Google. Check your internet connection and try again.")) });
+    document.head.appendChild(s);
+  });
+}
+function driveReady() {
+  drive.ready ||= Promise.all([loadScript("https://accounts.google.com/gsi/client"), loadScript("https://apis.google.com/js/api.js")])
+    .then(() => new Promise(ok => gapi.load("picker", ok)))
+    .catch(err => { drive.ready = null; throw err; });
+  return drive.ready;
+}
+// Ask Google for an access token. Must start from a click, because it may open a sign-in window.
+async function driveToken() {
+  if (drive.token && Date.now() < drive.exp - 60000) return drive.token;
+  await driveReady();
+  return new Promise((ok, fail) => {
+    drive.client ||= google.accounts.oauth2.initTokenClient({ client_id: GOOGLE.clientId, scope: GOOGLE.scope, callback: () => {} });
+    drive.client.callback = r => {
+      if (r.error) return fail(new Error(r.error === "access_denied" ? "Google Drive wasn't connected, because access wasn't allowed." : `Google sign-in didn't finish (${r.error}).`));
+      if (!google.accounts.oauth2.hasGrantedAllScopes(r, GOOGLE.scope)) return fail(new Error("MicPlotter needs permission to save its own files in your Drive. Connect again and tick the Drive box."));
+      drive.token = r.access_token; drive.exp = Date.now() + (r.expires_in || 3600) * 1000; ok(drive.token);
+    };
+    drive.client.error_callback = e => fail(new Error(e?.type === "popup_closed" ? "The Google sign-in window was closed before finishing." : e?.type === "popup_failed_to_open" ? "Your browser blocked the Google sign-in window. Allow pop-ups for micplotter.app and try again." : "Google sign-in didn't finish."));
+    drive.client.requestAccessToken({ prompt: drive.user ? "" : undefined, hint: prefs.driveEmail || undefined });
+  });
+}
+async function gfetch(url, opts = {}, retry = true) {
+  const token = await driveToken();
+  const res = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}` } });
+  if (res.status === 401 && retry) { drive.token = null; return gfetch(url, opts, false); }
+  if (!res.ok) {
+    let reason = ""; try { reason = (await res.json()).error?.message || ""; } catch {}
+    const err = new Error(reason || `Google Drive returned an error (${res.status}).`); err.status = res.status; throw err;
+  }
+  return res;
+}
+const driveJSON = async (url, opts) => (await gfetch(url, opts)).json();
+function multipart(meta, body) {
+  const b = "micplotter" + Math.random().toString(36).slice(2);
+  return {
+    headers: { "Content-Type": `multipart/related; boundary=${b}` },
+    body: `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`,
+  };
+}
+// The show as stored in a file: without the link to its Drive file
+function showForFile() { const copy = JSON.parse(JSON.stringify(show)); delete copy.driveFileId; delete copy.example; return JSON.stringify(copy, null, 2); }
+function driveVersions() { return (prefs.driveVersions ||= {}); }
+function driveSavedText() { return (prefs.driveSaved ||= {}); }
+function driveDirty() { return !!show.driveFileId && driveSavedText()[show.driveFileId] !== showForFile(); }
+
+async function driveConnect() {
+  drive.busy = true; renderDriveArea("Connecting to Google Drive…");
+  try {
+    await driveToken();
+    try { const a = await driveJSON(`${DRIVE_API}/about?fields=user(displayName,emailAddress)`); drive.user = a.user; prefs.driveEmail = a.user.emailAddress; } catch { drive.user = { displayName: "your Google account" }; }
+    prefs.driveConnected = true; applyPrefs();
+    await driveRefreshList();
+    drive.msg = `Connected to Google Drive as ${drive.user.emailAddress || drive.user.displayName}.`;
+  } catch (err) { drive.msg = err.message; }
+  drive.busy = false; renderDriveArea(); announce(drive.msg);
+}
+async function driveDisconnect() {
+  if (drive.token) { try { google.accounts.oauth2.revoke(drive.token, () => {}); } catch {} }
+  Object.assign(drive, { token: null, exp: 0, user: null, files: [], conflict: null });
+  prefs.driveConnected = false; delete prefs.driveEmail; applyPrefs();
+  drive.msg = "Disconnected from Google Drive. Your show is still saved in this browser.";
+  renderDriveArea(); renderHeader(); announce(drive.msg);
+}
+async function driveFolder() {
+  if (prefs.driveFolderId) {
+    try { const f = await driveJSON(`${DRIVE_API}/files/${prefs.driveFolderId}?fields=id,trashed`); if (!f.trashed) return f.id; } catch {}
+  }
+  const q = encodeURIComponent("name='MicPlotter' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const found = await driveJSON(`${DRIVE_API}/files?q=${q}&fields=files(id)&pageSize=1`);
+  let id = found.files[0]?.id;
+  if (!id) id = (await driveJSON(`${DRIVE_API}/files?fields=id`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "MicPlotter", mimeType: "application/vnd.google-apps.folder" }) })).id;
+  prefs.driveFolderId = id; applyPrefs();
+  return id;
+}
+async function driveRefreshList() {
+  const q = encodeURIComponent("appProperties has { key='micplotter' and value='show' } and trashed=false");
+  const r = await driveJSON(`${DRIVE_API}/files?q=${q}&orderBy=modifiedTime desc&pageSize=25&fields=files(${FILE_FIELDS})&supportsAllDrives=true&includeItemsFromAllDrives=true`);
+  drive.files = r.files || [];
+}
+
+async function driveSave({ asCopy = false, force = false } = {}) {
+  if (drive.busy) return;
+  drive.busy = true; drive.conflict = null; renderDriveArea("Saving to Google Drive…");
+  try {
+    const body = showForFile();
+    const name = `${(show.title || "Untitled show").replace(/[\\/:*?"<>|]+/g, "-")}.micplotter.json`;
+    let file;
+    if (show.driveFileId && !asCopy) {
+      const id = show.driveFileId;
+      const now = await driveJSON(`${DRIVE_API}/files/${id}?fields=${FILE_FIELDS}&supportsAllDrives=true`);
+      if (!now.capabilities?.canEdit) {
+        drive.conflict = { kind: "readonly", file: now };
+        drive.msg = `You can view “${now.name}” but not change it. Save a copy to your own Drive instead.`;
+        throw null;
+      }
+      const known = driveVersions()[id];
+      if (!force && known && now.version !== known) {
+        drive.conflict = { kind: "newer", file: now };
+        drive.msg = `${now.lastModifyingUser?.displayName || "Someone"} saved a newer version of “${now.name}” at ${new Date(now.modifiedTime).toLocaleString()}.`;
+        throw null;
+      }
+      const mp = multipart({ name }, body);
+      file = await driveJSON(`${DRIVE_UPLOAD}/files/${id}?uploadType=multipart&fields=${FILE_FIELDS}&supportsAllDrives=true`, { method: "PATCH", headers: mp.headers, body: mp.body });
+    } else {
+      const parent = await driveFolder();
+      const mp = multipart({ name, mimeType: "application/json", parents: [parent], appProperties: { micplotter: "show" } }, body);
+      file = await driveJSON(`${DRIVE_UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`, { method: "POST", headers: mp.headers, body: mp.body });
+      show.driveFileId = file.id;
+      store.set(STORE_KEY, JSON.stringify(show));
+    }
+    driveVersions()[file.id] = file.version;
+    driveSavedText()[file.id] = body;
+    applyPrefs();
+    await driveRefreshList().catch(() => {});
+    drive.msg = `Saved “${file.name}” to Google Drive.`;
+    toast(drive.msg);
+  } catch (err) { if (err) drive.msg = err.status === 404 ? "That show is no longer in Google Drive. Save a copy instead." : err.message; }
+  drive.busy = false; renderDriveArea(); renderHeader(); announce(drive.msg);
+}
+
+async function driveOpenFile(id) {
+  if (drive.busy) return;
+  if (driveDirty() && !drive.confirmOpen) { drive.confirmOpen = id; renderDriveArea(); $("#dr-confirm-yes")?.focus(); return; }
+  drive.confirmOpen = null;
+  drive.busy = true; renderDriveArea("Opening from Google Drive…");
+  try {
+    const meta = await driveJSON(`${DRIVE_API}/files/${id}?fields=${FILE_FIELDS}&supportsAllDrives=true`);
+    const buf = new Uint8Array(await (await gfetch(`${DRIVE_API}/files/${id}?alt=media&supportsAllDrives=true`)).arrayBuffer());
+    if (buf.length && isMplFile(buf)) {
+      const { show: s, summary: r } = parseMpl(buf, meta.name);
+      mutate(() => { show = s; });
+      drive.msg = `Opened the MicPlot file “${meta.name}”: ${r.actors} actors, ${r.scenes} scenes. Save to Google Drive to keep it as a MicPlotter show.`;
+    } else {
+      let s;
+      try { s = JSON.parse(new TextDecoder().decode(buf)); } catch { throw new Error(`“${meta.name}” isn't a MicPlotter show or MicPlot (.mpl) file.`); }
+      if (!validShow(s)) throw new Error(`“${meta.name}” isn't a MicPlotter show or MicPlot (.mpl) file.`);
+      s.scenes.forEach(x => { x.id ||= uid(); }); s.characters.forEach(x => { x.scenes ||= []; });
+      normaliseShow(s); s.driveFileId = id;
+      mutate(() => { show = s; });
+      driveVersions()[id] = meta.version; driveSavedText()[id] = showForFile(); applyPrefs();
+      const who = meta.ownedByMe ? "" : ` (shared by ${meta.owners?.[0]?.displayName || "someone else"}${meta.capabilities?.canEdit ? "" : ", view only"})`;
+      drive.msg = `Opened “${meta.name}” from Google Drive${who}.`;
+    }
+    await driveRefreshList().catch(() => {});
+    selectTab("show");
+  } catch (err) { drive.msg = err.status === 404 ? "MicPlotter can't open that file. Open it with “Choose from Google Drive” instead." : err.message; }
+  drive.busy = false; renderDriveArea(); renderHeader(); announce(drive.msg);
+}
+
+async function drivePick() {
+  try {
+    const token = await driveToken();
+    const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(false).setMode(google.picker.DocsViewMode.LIST);
+    const shared = new google.picker.DocsView(google.picker.ViewId.DOCS).setOwnedByMe(false).setMode(google.picker.DocsViewMode.LIST);
+    new google.picker.PickerBuilder()
+      .setAppId(GOOGLE.appId).setOAuthToken(token).setDeveloperKey(GOOGLE.apiKey)
+      .setTitle("Open a MicPlotter show or MicPlot (.mpl) file")
+      .addView(view).addView(shared)
+      .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
+      .setOrigin(location.origin)
+      .setCallback(data => {
+        if (data.action === google.picker.Action.PICKED) driveOpenFile(data.docs[0].id);
+        if (data.action === google.picker.Action.CANCEL) $("#dr-pick")?.focus();
+      })
+      .build().setVisible(true);
+  } catch (err) { drive.msg = err.message; renderDriveArea(); announce(drive.msg); }
+}
+
+function renderDriveArea(busyText) {
+  const el = $("#drive-area"); if (!el) return;
+  const linked = show.driveFileId && drive.files.find(f => f.id === show.driveFileId);
+  const dirty = driveDirty();
+  const when = t => new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  let html = `<h4 style="margin:0">Google Drive</h4>`;
+  if (!drive.token && !drive.user) {
+    html += `<p class="hint">Save shows in your own Google Drive and open shows that others share with you. MicPlotter can only see files it creates or that you open with it.</p>
+      <div class="btns"><button type="button" class="btn" id="dr-connect" ${drive.busy ? "disabled" : ""}>${prefs.driveConnected ? "Reconnect Google Drive" : "Connect Google Drive"}</button></div>`;
+  } else {
+    html += `<p class="hint">Connected as ${esc(drive.user?.emailAddress || drive.user?.displayName || "")}.${show.driveFileId ? ` This show is ${dirty ? "<strong>not saved yet</strong>: it has changes since your last Drive save" : "saved"}${linked ? ` as “${esc(linked.name)}”` : ""}.` : " This show isn't in Drive yet."}</p>
+      <div class="btns">
+        <button type="button" class="btn" id="dr-save" ${drive.busy ? "disabled" : ""}>${show.driveFileId ? "Save to Google Drive" : "Save to Google Drive…"}</button>
+        ${show.driveFileId ? `<button type="button" class="btn secondary" id="dr-copy" ${drive.busy ? "disabled" : ""}>Save as a copy</button>` : ""}
+        <button type="button" class="btn secondary" id="dr-pick" ${drive.busy ? "disabled" : ""}>Choose from Google Drive…</button>
+        ${linked?.webViewLink ? `<a class="btn secondary" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(linked.webViewLink)}" target="_blank" rel="noopener">Share in Google Drive<span class="sr-only"> (opens in a new tab)</span></a>` : ""}
+      </div>`;
+    if (drive.conflict?.kind === "newer") html += `<div class="conflict" role="alert"><p><strong>Newer version in Drive.</strong> ${esc(drive.msg)}</p>
+      <div class="btns"><button type="button" class="btn" id="dr-load-theirs">Open their version</button><button type="button" class="btn secondary" id="dr-copy2">Save mine as a copy</button><button type="button" class="btn danger" id="dr-force">Replace theirs with mine</button></div></div>`;
+    if (drive.conflict?.kind === "readonly") html += `<div class="conflict" role="alert"><p>${esc(drive.msg)}</p><div class="btns"><button type="button" class="btn" id="dr-copy2">Save a copy to my Drive</button></div></div>`;
+    if (drive.confirmOpen) html += `<div class="conflict" role="alert"><p><strong>This show has changes that aren't saved to Drive.</strong> Open the other show anyway? Your changes stay in this browser's undo history.</p>
+      <div class="btns"><button type="button" class="btn" id="dr-confirm-yes">Open it</button><button type="button" class="btn secondary" id="dr-confirm-no">Cancel</button></div></div>`;
+    if (drive.files.length) html += `<h5 style="margin:.4rem 0 0;font-size:1rem">Your MicPlotter shows in Drive</h5>
+      <ul class="drive-list">${drive.files.map(f => `<li><button type="button" class="linklike" data-open="${esc(f.id)}" ${drive.busy ? "disabled" : ""}><span>${esc(f.name.replace(/\.micplotter\.json$/i, ""))}</span><span class="hint">${f.ownedByMe ? "" : `Shared by ${esc(f.owners?.[0]?.displayName || "someone")}${f.capabilities?.canEdit ? "" : ", view only"} · `}${esc(when(f.modifiedTime))}${f.id === show.driveFileId ? " · open now" : ""}</span></button></li>`).join("")}</ul>`;
+    html += `<div class="btns"><button type="button" class="btn secondary" id="dr-disconnect">Disconnect Google Drive</button></div>`;
+  }
+  html += `<p role="status" class="hint" id="dr-msg">${esc(busyText || drive.msg || "")}</p>`;
+  el.innerHTML = html;
+}
+// Drive buttons (bound once; the area re-renders)
+document.addEventListener("click", e => {
+  const t = e.target.closest("button"); if (!t || !t.closest("#drive-area")) return;
+  if (t.id === "dr-connect") driveConnect();
+  else if (t.id === "dr-save") driveSave();
+  else if (t.id === "dr-copy" || t.id === "dr-copy2") driveSave({ asCopy: true });
+  else if (t.id === "dr-force") driveSave({ force: true });
+  else if (t.id === "dr-load-theirs") { const id = drive.conflict.file.id; drive.conflict = null; drive.confirmOpen = id; driveOpenFile(id); }
+  else if (t.id === "dr-pick") drivePick();
+  else if (t.id === "dr-disconnect") driveDisconnect();
+  else if (t.id === "dr-confirm-yes") { const id = drive.confirmOpen; driveOpenFile(id); }
+  else if (t.id === "dr-confirm-no") { drive.confirmOpen = null; renderDriveArea(); $("#dr-pick")?.focus(); }
+  else if (t.dataset.open) driveOpenFile(t.dataset.open);
+});
+window.addEventListener("beforeunload", e => { if (driveDirty() && drive.token) { e.preventDefault(); e.returnValue = ""; } });
+
 /* ---------- Panel: Show & settings ---------- */
 function renderShowPanel() {
   const p = $("#panel-show");
@@ -923,6 +1166,7 @@ function renderShowPanel() {
           <button type="button" class="btn danger" id="b-new">Start a new show</button>
         </div>
         <p id="file-msg" role="status"></p>
+        <div id="drive-area" class="drive-area"></div>
       </section>
       <section class="card" aria-labelledby="h-display">
         <h3 id="h-display">Display</h3>
@@ -947,9 +1191,10 @@ function renderShowPanel() {
   num("#f-mics", "mics", 0, 999);
 
   $("#b-export").addEventListener("click", () => {
-    download(`${slug(show.title)}.micplotter.json`, JSON.stringify(show, null, 2), "application/json");
+    download(`${slug(show.title)}.micplotter.json`, showForFile(), "application/json");
     $("#file-msg").textContent = "Show file saved to your downloads.";
   });
+  renderDriveArea();
   $("#b-csv").addEventListener("click", () => { download(`${slug(show.title)}-mic-plot.csv`, plotCSV(), "text/csv"); $("#file-msg").textContent = "Spreadsheet saved to your downloads."; });
   $("#b-import").addEventListener("click", () => $("#f-import").click());
   $("#f-import").addEventListener("change", async e => {
@@ -1537,6 +1782,7 @@ function renderHelpPanel() {
           <dt><kbd>Space</kbd></dt><dd>Tick or untick a scene in the grid</dd>
           <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First or last scene in a grid row</dd>
           <dt><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Undo the last change (outside text boxes)</dd>
+          <dt><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd></dt><dd>Save to Google Drive, once it's connected</dd>
         </dl>
       </section>
       <section class="card" aria-labelledby="h-a11y">
@@ -1564,6 +1810,12 @@ function plotCSV() {
 /* ---------- Boot ---------- */
 const renderers = { show: renderShowPanel, cast: renderCastPanel, scenes: renderScenesPanel, grid: renderGridPanel, plot: renderPlotPanel, paper: renderPaperPanel, help: renderHelpPanel };
 document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    if (drive.token || drive.user) driveSave();
+    else { selectTab("show"); announce("Connect Google Drive to save there, or use Save show as file."); $("#dr-connect")?.focus(); }
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
     const t = e.target, typing = t.matches?.('input[type="text"], input[type="number"], textarea, select');
     if (!typing) { e.preventDefault(); undo(); }
