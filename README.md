@@ -2,16 +2,16 @@
 
 MicPlotter plans which actor wears which wireless microphone in every scene of a show, so a production needs as few mics and swaps as possible. It's for sound designers, sound crews and educators.
 
-It's inspired by CH Sound Design's MicPlot for Windows, and it can open MicPlot 3.0 `.mpl` files.
+It can also open files saved by MicPlot 3.0, an older Windows program, so existing shows can come across.
 
 ## What it does
 
 - Enter the cast, characters and scenes, then tick who is on stage in each scene.
-- MicPlotter builds the mic plot. You can set the swap times and put the desktop-style rules in your own order: fewest transmitters, fewest swaps, fewest fast swaps, intermission swaps, and more.
+- MicPlotter builds the mic plot. You set the swap times and put its priorities in your own order: fewest mics, fewest swaps, no rushed swaps, swaps at intermission, and more.
 - The wall chart shows which mic each actor wears, when it goes on and when it comes off.
 - The sound crew running order lists what to fit and collect at every break.
 - An understudy check confirms that covers can still get a mic.
-- Paperwork prints cast slips, mic labels and rehearsal tags, and the mic plot itself prints on landscape pages.
+- The wall chart downloads as a crew-ready PDF. Paperwork prints actor cards, mic labels and mic-check name tags.
 - MicPlot 3.0 `.mpl` files open directly. Shows save in the browser, and you can save them to a file.
 - Shows can be saved in your own Google Drive. Share a show the way you share any Drive file, and others can open it in MicPlotter. MicPlotter only asks for access to files it creates or that you open with it.
 
@@ -34,3 +34,9 @@ The site is published with Netlify. `netlify.toml` tells Netlify to publish the 
 ## Privacy
 
 Shows are stored in your own browser, in files you save, or in your own Google Drive. MicPlotter has no server and never receives your shows. See [privacy.html](privacy.html).
+
+## Disclaimer
+
+MicPlotter is an independent project. It isn't affiliated with, endorsed by or connected to CH Sound Design or its MicPlot software. MicPlot and CH Sound Design are names of their respective owners. They are used here only to describe the files MicPlotter can open. MicPlotter's code was written independently and contains no MicPlot code.
+
+MicPlotter is provided free and as is, without warranty of any kind. Always check your plot before a performance.

@@ -90,7 +90,10 @@ nav.tabs-wrap { background: var(--surface); border-bottom: 2px solid var(--line)
 [role="tab"][aria-selected="true"] { background: var(--accent); color: var(--accent-fg); }
 [role="tab"] .step { font-family: var(--font-mono); font-weight: 400; opacity: .85; margin-right: .35rem; }
 
-main { padding-block: 1.5rem 4rem; }
+main { padding-block: 1.5rem 2.5rem; }
+.site-footer { border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: .9rem; }
+.site-footer .wrap { padding-block: 1rem 5rem; display: grid; gap: .4rem; }
+.site-footer p { max-width: 90ch; }
 [role="tabpanel"] { display: grid; gap: 1.5rem; grid-template-columns: minmax(0, 1fr); }
 [role="tabpanel"] > *, .cols > * { min-width: 0; }
 [role="tabpanel"]:focus-visible { outline-offset: 6px; }
@@ -300,6 +303,12 @@ dl.keys dd { margin: 0; }
   <div role="tabpanel" id="panel-help" aria-labelledby="tab-help" tabindex="0" hidden></div>
 </main>
 
+<footer class="site-footer no-print">
+  <div class="wrap">
+    <p>MicPlotter is an independent project. It isn't affiliated with, endorsed by or connected to CH Sound Design or its MicPlot software. MicPlot is named only to describe the files MicPlotter can open. MicPlotter is free and provided as is, without warranty: always check your plot before a performance.</p>
+    <p><a href="privacy.html">Privacy</a> · <a href="#help" data-goto="help">Help and about</a></p>
+  </div>
+</footer>
 <div class="statusbar" id="statusbar"></div>
 <div class="sr-only" role="status" aria-live="polite" id="announcer"></div>
 
@@ -366,28 +375,28 @@ function emptyShow() {
 }
 
 /* ---------- The mic plot engine ----------
-   Like the desktop MicPlot, the plot is chosen by rules you put in order:
+   The plot is chosen by priorities you put in order:
    1. Work out when each actor needs a mic ("spans"), using their "When miked" setting.
    2. Build many candidate plots. Each one hands spans to mics in a slightly
       different way (more candidates = a more thorough search).
    3. Score every candidate on each rule and keep the best one, comparing the
       rules in your order: a later rule only breaks ties left by earlier ones. */
 const RULES = [
-  { id: 1, key: "mics", label: "Minimise number of transmitters", hint: "Use as few mics as possible." },
-  { id: 2, key: "swaps", label: "Minimise total number of swaps", hint: "Pass mics between actors as rarely as possible." },
-  { id: 3, key: "fast", label: "Minimise number of fast swaps", hint: "Avoid swaps with less time than the fast swap setting." },
-  { id: 4, key: "nonIntermission", label: "Minimise number of non-intermission swaps", hint: "Do swaps during the intermission where possible." },
-  { id: 5, key: "peak", label: "Minimise peak simultaneous swaps", hint: "Spread swaps out so the crew isn't swamped at one change." },
-  { id: 6, key: "refits", label: "Minimise number of refits", hint: "Avoid taking an actor's mic off and putting one back on later." },
-  { id: 7, key: "keepers", label: "Maximise cast who don't swap", hint: "Let as many actors as possible keep one mic all show." },
-  { id: 8, key: "spare", label: "Minimise “spare” transmitter unavailability", hint: "Keep a free mic in as many scenes as possible." },
-  { id: 14, key: "unmiked", label: "Minimise unmiked pages", hint: "When mics run short, leave as few actors unmiked as possible. Higher-priority actors are miked first." },
+  { id: 1, key: "mics", label: "Use the fewest mics", hint: "Keep the number of mic packs as low as possible." },
+  { id: 2, key: "swaps", label: "Keep mic swaps to a minimum", hint: "Pass mics from one actor to another as rarely as possible." },
+  { id: 3, key: "fast", label: "Avoid rushed swaps", hint: "Avoid swaps with less time than the rushed-swap setting." },
+  { id: 4, key: "nonIntermission", label: "Save swaps for intermission", hint: "Where possible, do swaps during the intermission instead of mid-act." },
+  { id: 5, key: "peak", label: "Spread out the crew's work", hint: "Avoid piling lots of swaps into a single scene change." },
+  { id: 6, key: "refits", label: "Avoid re-miking actors", hint: "Avoid taking an actor's mic off and fitting one again later." },
+  { id: 7, key: "keepers", label: "Let more actors keep their own mic", hint: "Let as many actors as possible wear one mic all show, with no swaps." },
+  { id: 8, key: "spare", label: "Keep a spare mic free", hint: "Leave a free mic in as many scenes as possible, in case one fails." },
+  { id: 14, key: "unmiked", label: "Mic as many actors as possible", hint: "When there aren't enough mics, leave as few actors without one as possible. Higher-priority actors get mics first." },
 ];
 const DEFAULT_RULES = [14, 1, 2, 3, 4, 5, 6, 7, 8].map(id => ({ id, on: [14, 1, 2, 3, 4, 5].includes(id) }));
 const EFFORT = { rough: 1, quick: 30, medium: 150, thorough: 600 };
 const WHEN_MIKED = [
-  ["normal", "Normal (when on stage)"], ["never", "Never"], ["always", "Always (whole show)"],
-  ["first-last", "First to last entrance"], ["start-last", "Start of show to last entrance"], ["first-end", "First entrance to end of show"],
+  ["normal", "While on stage"], ["never", "No mic"], ["always", "Whole show"],
+  ["first-last", "First entrance until last exit"], ["start-last", "Top of show until last exit"], ["first-end", "First entrance until end of show"],
 ];
 function normaliseSettings(s) {
   s.mics = Math.max(0, parseInt(s.mics, 10) || 0);
@@ -640,7 +649,7 @@ function checkShow(show, plot) {
   const sceneLabel = i => { const s = show.scenes[i]; return s ? (s.code || `Scene ${i + 1}`) : "?"; };
   if (!show.scenes.length) issues.push({ level: "warn", text: "Add scenes on the Scenes tab to start." });
   if (!show.actors.length) issues.push({ level: "warn", text: "Add actors on the Cast tab to start." });
-  if (plot.txMode === "auto" && plot.micCount > plot.avail) issues.push({ level: "bad", text: `This plot needs ${plot.micCount} mics but only ${plot.avail} are available.`, more: "Raise the number of mics, shorten the swap time, or switch to “Use exactly the mics available” so the lowest-priority actors go without." });
+  if (plot.txMode === "auto" && plot.micCount > plot.avail) issues.push({ level: "bad", text: `This plot needs ${plot.micCount} mics but only ${plot.avail} are available.`, more: "Raise the number of mics, shorten the swap time, or choose “Stick to the mics I have” in Plot settings so the lowest-priority actors go without." });
   const byActor = new Map();
   plot.unmiked.forEach(sp => { if (!byActor.has(sp.actorId)) byActor.set(sp.actorId, []); byActor.get(sp.actorId).push(sp); });
   for (const [id, list] of byActor) {
@@ -829,7 +838,7 @@ function parseMpl(raw, fileName) {
   const moves = [];
   for (let n = word(), i = 0; i < n; i++) {
     const m = { id: str(), title: str(), page: byte(), cue: str(), notes: [longStr(), longStr(), longStr()] };
-    m.chars = [set(), set(), set(), set()];   // entrances: must mic, nice to mic, don't mic; then exits
+    m.chars = [set(), set(), set(), set()];   // entrances by mic need (required, optional, none); then exits
     m.ens = [set(), set(), set(), set()];     // the same for ensemble actors
     moves.push(m);
   }
@@ -852,7 +861,7 @@ function parseMpl(raw, fileName) {
   show.settings.swapGap = 1;
   show.source = { from: "MicPlot 3.0", file: fileName || "", date: info[1], venue: info[2], swapPages: swapPages ?? null };
   show.actors = actors.map(a => ({ id: uid(), name: a.name || "Unnamed actor", preferredMic: a.mic || "", whenMiked: "normal", priority: 3 }));
-  // Desktop plot settings: rule order and switches, search effort, transmitter mode
+  // Plot settings saved in the file: priority order and switches, search effort, mic pack mode
   if (mplRules.length) show.settings.rules = mplRules;
   if (mplEffort) show.settings.effort = mplEffort;
   if (mplTxMode) show.settings.txMode = mplTxMode;
@@ -1147,7 +1156,7 @@ function renderShowPanel() {
           <span class="hint" id="f-mics-hint">The number of mic packs you have for this show.</span>
           <input type="number" id="f-mics" min="0" max="999" inputmode="numeric" value="${esc(show.settings.mics)}" aria-describedby="f-mics-hint">
         </div>
-        <p class="hint">Swap times, rules and the other plot settings are on the <a href="#plot" data-goto="plot">Mic plot tab</a>.</p>
+        <p class="hint">Swap times, priorities and the other plot settings are on the <a href="#plot" data-goto="plot">Mic plot tab</a>.</p>
       </section>
       <section class="card" aria-labelledby="h-file">
         <h3 id="h-file">Save and open</h3>
@@ -1228,7 +1237,7 @@ async function openShowFile(f) {
       const parts = [`${r.actors} actors`, `${r.characters} characters`, `${r.scenes} scenes`];
       if (r.ensemble) parts.push(`${r.ensemble} ensemble tracks`);
       let text = `Opened “${show.title}” from MicPlot: ${parts.join(", ")}.`;
-      if (r.niceSkipped) text += ` ${r.niceSkipped} “Nice to mic” entrances were left out, so only “Must mic” entrances need a mic.`;
+      if (r.niceSkipped) text += ` ${r.niceSkipped} entrances marked as optional in the MicPlot file were left out, so only required entrances get a mic.`;
       msg(text);
       toast(`Opened “${show.title}” from MicPlot.`, true);
       return;
@@ -1278,14 +1287,14 @@ function renderCastPanel() {
       <p class="error" id="na-err" aria-live="polite"></p>
       ${show.actors.length ? `<div class="table-scroll"><table class="edit-table">
         <caption>Each actor's mic rules. A priority mic is a mic number this actor should get when possible. Priority decides who keeps a mic when there aren't enough.</caption>
-        <thead><tr><th scope="col">Name</th><th scope="col">Plays</th><th scope="col">Priority mic</th><th scope="col">When miked</th><th scope="col">Priority</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+        <thead><tr><th scope="col">Name</th><th scope="col">Plays</th><th scope="col">Priority mic</th><th scope="col">Needs a mic</th><th scope="col">Priority</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
         <tbody>${show.actors.map(a => {
           const plays = show.characters.filter(c => c.actorId === a.id).map(c => c.name).join(", ");
           return `<tr data-id="${a.id}">
             <td><label class="sr-only" for="an-${a.id}">Name</label><input type="text" id="an-${a.id}" data-f="name" value="${esc(a.name)}"></td>
             <td>${plays ? esc(plays) : '<span class="hint">No characters yet</span>'}</td>
             <td class="narrow"><label class="sr-only" for="ap-${a.id}">Priority mic for ${esc(a.name)}</label><input type="number" min="1" max="999" inputmode="numeric" id="ap-${a.id}" data-f="preferredMic" value="${esc(a.preferredMic)}" placeholder="Any"></td>
-            <td><label class="sr-only" for="aw-${a.id}">When ${esc(a.name)} is miked</label><select id="aw-${a.id}" data-f="whenMiked">${WHEN_MIKED.map(([k, l]) => `<option value="${k}" ${a.whenMiked === k ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+            <td><label class="sr-only" for="aw-${a.id}">When ${esc(a.name)} needs a mic</label><select id="aw-${a.id}" data-f="whenMiked">${WHEN_MIKED.map(([k, l]) => `<option value="${k}" ${a.whenMiked === k ? "selected" : ""}>${l}</option>`).join("")}</select></td>
             <td class="narrow"><label class="sr-only" for="ar-${a.id}">Priority for ${esc(a.name)}</label><select id="ar-${a.id}" data-f="priority">${[1, 2, 3, 4, 5].map(n => `<option value="${n}" ${a.priority === n ? "selected" : ""}>${n}${n === 1 ? " (highest)" : n === 5 ? " (lowest)" : ""}</option>`).join("")}</select></td>
             <td class="narrow"><button type="button" class="icon del" data-del="actor" aria-label="Remove actor ${esc(a.name)}">✕</button></td>
           </tr>`; }).join("")}</tbody></table></div>` : `<p class="hint">No actors yet. Add the first one above.</p>`}
@@ -1534,9 +1543,9 @@ function renderPlotPanel() {
     </div>
     <div class="summary" role="group" aria-label="Summary" data-print="all">
       <div class="stat"><span class="label">Mics used</span><span class="value">${plot.micCount}</span><span class="hint">Fewest possible: ${plot.minMics}</span><span class="pill ${short ? "bad" : "good"}">${short ? (plot.unmiked.length ? "! Some actors have no mic" : `! ${plot.micCount - plot.avail} more than you have`) : `✓ Fits your ${plot.avail} mics`}</span></div>
-      <div class="stat"><span class="label">Mic swaps</span><span class="value">${plot.handoffs.length}</span><span class="hint">${sc.fast} fast, ${sc.nonIntermission} outside the intermission</span></div>
-      <div class="stat"><span class="label">Actors who never swap</span><span class="value">${sc.keepersCount}</span><span class="hint">of ${new Set(plot.spans.map(s => s.actorId)).size} on mic</span></div>
-      <div class="stat"><span class="label">Most swaps at one change</span><span class="value">${sc.peak}</span><span class="hint">${sc.refits} refits</span></div>
+      <div class="stat"><span class="label">Mic swaps</span><span class="value">${plot.handoffs.length}</span><span class="hint">${sc.fast} rushed, ${sc.nonIntermission} outside the intermission</span></div>
+      <div class="stat"><span class="label">Actors on one mic all show</span><span class="value">${sc.keepersCount}</span><span class="hint">of ${new Set(plot.spans.map(s => s.actorId)).size} on mic</span></div>
+      <div class="stat"><span class="label">Most swaps at one change</span><span class="value">${sc.peak}</span><span class="hint">${sc.refits} re-miked</span></div>
     </div>
 
     <section class="card no-print" aria-labelledby="h-settings">
@@ -1545,29 +1554,29 @@ function renderPlotPanel() {
         <div class="cols" style="margin-top:1rem">
           <div style="display:grid;gap:.9rem;align-content:start">
             <fieldset class="field" style="border:0;padding:0;margin:0">
-              <legend style="font-weight:600;margin-bottom:.3rem">Transmitters</legend>
-              <label class="check"><input type="radio" name="ps-tx" id="ps-tx-auto" value="auto" ${set.txMode === "auto" ? "checked" : ""}> Use as few as needed (Auto)</label>
-              <label class="check"><input type="radio" name="ps-tx" id="ps-tx-fixed" value="fixed" ${set.txMode === "fixed" ? "checked" : ""}> Use only the mics available (Manual). If there aren't enough, the lowest-priority actors go without.</label>
+              <legend style="font-weight:600;margin-bottom:.3rem">Mic packs</legend>
+              <label class="check"><input type="radio" name="ps-tx" id="ps-tx-auto" value="auto" ${set.txMode === "auto" ? "checked" : ""}> Use as few mics as the show needs</label>
+              <label class="check"><input type="radio" name="ps-tx" id="ps-tx-fixed" value="fixed" ${set.txMode === "fixed" ? "checked" : ""}> Stick to the mics I have. If there aren't enough, the lowest-priority actors go without.</label>
             </fieldset>
             <div class="field"><label for="ps-mics">Mics available</label><input type="number" id="ps-mics" min="0" max="999" inputmode="numeric" value="${set.mics}"></div>
             <div class="field"><label for="ps-gap">Minimum swap time, in scenes</label><span class="hint" id="ps-gap-hint">How many scenes a mic must sit free before it can go to another actor. 0 means a swap can happen during a scene change.</span><input type="number" id="ps-gap" min="0" max="20" inputmode="numeric" value="${set.swapGap}" aria-describedby="ps-gap-hint"></div>
-            <div class="field"><label for="ps-fast">Fast swap if fewer than this many scenes</label><span class="hint" id="ps-fast-hint">Swaps with less time than this count as fast swaps. Swaps across the intermission never count as fast.</span><input type="number" id="ps-fast" min="0" max="20" inputmode="numeric" value="${set.fastGap}" aria-describedby="ps-fast-hint"></div>
-            <label class="check"><input type="checkbox" id="ps-one" ${set.onePerCast ? "checked" : ""}> One mic per cast member (no sharing)</label>
-            <div class="field"><label for="ps-effort">Search</label><span class="hint" id="ps-effort-hint">How many different plots to try before picking the best. Thorough takes longer on big shows.</span>
-              <select id="ps-effort" aria-describedby="ps-effort-hint">${[["rough", "Rough (1 plot)"], ["quick", "Quick (30 plots)"], ["medium", "Medium (150 plots)"], ["thorough", "Thorough (600 plots)"]].map(([k, l]) => `<option value="${k}" ${set.effort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+            <div class="field"><label for="ps-fast">A swap is rushed if it has fewer than this many scenes</label><span class="hint" id="ps-fast-hint">Swaps with less time than this count as rushed. Swaps across the intermission never count as rushed.</span><input type="number" id="ps-fast" min="0" max="20" inputmode="numeric" value="${set.fastGap}" aria-describedby="ps-fast-hint"></div>
+            <label class="check"><input type="checkbox" id="ps-one" ${set.onePerCast ? "checked" : ""}> Never share a mic between actors</label>
+            <div class="field"><label for="ps-effort">Search</label><span class="hint" id="ps-effort-hint">How many different plots to try before picking the best. Most careful takes longer on big shows.</span>
+              <select id="ps-effort" aria-describedby="ps-effort-hint">${[["rough", "Fastest (1 plot)"], ["quick", "Quick (30 plots)"], ["medium", "Balanced (150 plots)"], ["thorough", "Most careful (600 plots)"]].map(([k, l]) => `<option value="${k}" ${set.effort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
           </div>
           <div style="display:grid;gap:.6rem;align-content:start;min-width:0">
-            <h4 style="margin:0" id="h-rules">Rules, most important first</h4>
-            <p class="hint">The plot that does best on the first ticked rule wins. Later rules only settle ties.</p>
+            <h4 style="margin:0" id="h-rules">Priorities, most important first</h4>
+            <p class="hint">The plot that does best on your first ticked priority wins. Later priorities only settle ties.</p>
             <ol class="rules" aria-labelledby="h-rules">${set.rules.map((r, i) => { const R = RULES.find(x => x.id === r.id); return `<li data-rule="${r.id}">
               <label class="check"><input type="checkbox" id="rule-${r.id}" ${r.on ? "checked" : ""} aria-describedby="rule-hint-${r.id}"> ${esc(R.label)}</label>
               <span class="hint" id="rule-hint-${r.id}">${esc(R.hint)} This plot: <strong class="mono">${ruleValue(R.key)}</strong></span>
               <span class="btns"><button type="button" class="icon" data-rmove="-1" aria-label="Move “${esc(R.label)}” up" ${i === 0 ? "disabled" : ""}>↑</button><button type="button" class="icon" data-rmove="1" aria-label="Move “${esc(R.label)}” down" ${i === set.rules.length - 1 ? "disabled" : ""}>↓</button></span>
             </li>`; }).join("")}</ol>
-            <div class="btns"><button type="button" class="btn secondary" id="ps-reset">Reset rules to default</button></div>
+            <div class="btns"><button type="button" class="btn secondary" id="ps-reset">Reset priorities to default</button></div>
           </div>
         </div>
-        <p class="hint">Tried ${plot.tried} plot${plot.tried === 1 ? "" : "s"}. Mic colour, quality, projection, vocal range and belt size rules from the desktop version aren't available yet.</p>
+        <p class="hint">Tried ${plot.tried} plot${plot.tried === 1 ? "" : "s"}. Rules for matching mic colour, quality, projection, vocal range and belt size aren't available yet.</p>
       </details>
     </section>
 
@@ -1906,15 +1915,15 @@ function renderPaperPanel() {
   p.innerHTML = `
     <div class="panel-head no-print">
       <h2>Paperwork</h2>
-      <p>Cast slips, mic labels and rehearsal tags, ready to print. Choose what to print, then use the Print button.</p>
+      <p>Actor cards, mic labels and mic-check name tags, ready to print. Choose what to print, then use the Print button.</p>
       <div class="row">
         <div class="field" style="flex:0 1 18rem"><label for="pw-which">Print</label>
-          <select id="pw-which"><option value="all">Everything</option><option value="slips">Cast slips only</option><option value="labels">Mic labels only</option><option value="tags">Rehearsal tags only</option></select></div>
+          <select id="pw-which"><option value="all">Everything</option><option value="slips">Actor cards only</option><option value="labels">Mic labels only</option><option value="tags">Name tags only</option></select></div>
         <button type="button" class="btn" id="pw-print">Print</button>
       </div>
     </div>
     <section aria-labelledby="h-slips" data-pw="slips" class="card">
-      <h3 id="h-slips">Cast slips</h3>
+      <h3 id="h-slips">Actor cards</h3>
       <p class="hint no-print">One for each actor: which mic they wear and when it changes.</p>
       <div class="slips">${miked.map(a => `<article class="slip" aria-labelledby="slip-${a.id}">
         <h3 id="slip-${a.id}">${esc(a.name)}</h3>
@@ -1932,9 +1941,9 @@ function renderPaperPanel() {
       }).join("") || '<p class="hint">No mics in use yet.</p>'}</div>
     </section>
     <section aria-labelledby="h-tags" data-pw="tags" class="card">
-      <h3 id="h-tags">Rehearsal tags</h3>
+      <h3 id="h-tags">Mic-check name tags</h3>
       <p class="hint no-print">Name tags for a mic check before tech, so you can test the plot with the cast.</p>
-      <div class="slips">${miked.map(a => `<article class="slip" aria-label="Rehearsal tag for ${esc(a.name)}"><span class="label-big">${[...new Set(spansOf(a.id).map(s => s.mic))].join(" / ")}</span><strong>${esc(a.name)}</strong><span class="hint">${esc(show.characters.filter(c => c.actorId === a.id).map(c => c.name).join(", "))}</span></article>`).join("")}</div>
+      <div class="slips">${miked.map(a => `<article class="slip" aria-label="Mic-check name tag for ${esc(a.name)}"><span class="label-big">${[...new Set(spansOf(a.id).map(s => s.mic))].join(" / ")}</span><strong>${esc(a.name)}</strong><span class="hint">${esc(show.characters.filter(c => c.actorId === a.id).map(c => c.name).join(", "))}</span></article>`).join("")}</div>
     </section>`;
   const apply = () => { const w = $("#pw-which").value; $$("[data-pw]", p).forEach(s => { s.hidden = !(w === "all" || s.dataset.pw === w); }); };
   $("#pw-which").addEventListener("change", apply);
@@ -1954,9 +1963,9 @@ function renderHelpPanel() {
           <li><strong>Scenes:</strong> list every scene or number in running order.</li>
           <li><strong>Who's on:</strong> tick each scene a character is in.</li>
           <li><strong>Mic plot:</strong> read the wall chart, the crew running order and the checks.</li>
-          <li><strong>Paperwork:</strong> print cast slips, mic labels and rehearsal tags.</li>
+          <li><strong>Paperwork:</strong> print actor cards, mic labels and mic-check name tags.</li>
         </ol>
-        <p>Actors marked “Never swap” keep one mic for the whole show. A priority mic gives an actor that mic number whenever it's free.</p>
+        <p>On the Cast tab, “Needs a mic” sets when each actor wears one: only while on stage, for the whole show, or from their first entrance until their last exit. A priority mic gives an actor that mic number whenever it's free. Priority decides who keeps a mic when there aren't enough.</p>
       </section>
       <section class="card" aria-labelledby="h-keys">
         <h3 id="h-keys">Keyboard</h3>
@@ -1979,6 +1988,13 @@ function renderHelpPanel() {
           <li>Follows your device's reduced-motion and high-contrast settings.</li>
           <li>Removing something can always be undone.</li>
         </ul>
+      </section>
+      <section class="card" aria-labelledby="h-about">
+        <h3 id="h-about">About MicPlotter</h3>
+        <p>MicPlotter is a free, independent tool for sound designers, crews and educators. It isn't affiliated with, endorsed by or connected to CH Sound Design or its MicPlot software. MicPlotter can open files saved by MicPlot 3.0, so people can bring existing shows across. The names MicPlot and CH Sound Design belong to their owners and are used only to describe those files.</p>
+        <p>MicPlotter's code was written independently and contains no code from MicPlot.</p>
+        <p>MicPlotter is provided as is, without warranty of any kind. Always check the plot, swaps and paperwork yourself before a rehearsal or performance.</p>
+        <p>Questions: <span class="mono">admin@micplotter.app</span> · <a href="privacy.html">Privacy policy</a></p>
       </section>
     </div>`;
 }
